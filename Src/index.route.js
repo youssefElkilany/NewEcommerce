@@ -20,8 +20,24 @@ const __dirname = path.dirname(__filename)
 
 const Bootstrap = (app,express)=>{
 
-    app.use(express.json())
-    
+  app.use(cors())
+
+// let whiteList = [] // FE link
+//   app.use(async (req, res, next) => {
+//     let origin = req.headers.origin
+//     if(!whiteList.includes(origin))
+//     {
+//       return next(new Error('Not allowed by CORS'))
+//     }
+//     await  res.setHeader('Access-Control-Allow-Origin',origin)
+//    await res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,PATCH,DELETE')
+//    await res.setHeader('Access-Control-Allow-Headers','*')
+//    await res.setHeader('Access-Control-Allow-Private-Network',true)
+//     next()
+//   })
+
+    app.use(express.json())    
+
   //   app.use(
   //   '/uploads',
   //   express.static(path.join(__dirname, '/uploads'))

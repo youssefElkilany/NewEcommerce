@@ -20,11 +20,7 @@ async function calculateAvgAndUpdateProduct(productId){
     }
 ])
 
-console.log({stats});
 
-console.log({avg:stats[0]?.average});
-console.log({count:stats[0]?.count});
-console.log({avg2:stats[0]?.average??0});
 
 
 
@@ -42,7 +38,6 @@ return updateproduct
 export const reviewProduct = asyncHandler(async(req,res,next)=>{
     const {productId} = req.params
     const {orderId,rating,comment} = req.body
-    console.log({productId});
     
 
     const product = await productModel.findById(productId)
@@ -50,7 +45,6 @@ export const reviewProduct = asyncHandler(async(req,res,next)=>{
     {
         return next(new Error("product not found"))
     }
-console.log("g");
 
     const order = await orderModel.findOne({_id:orderId,status:'delivered',
         'products.productId':productId,createdBy:req.user.id})
@@ -58,7 +52,6 @@ console.log("g");
     {
         return next(new Error("order not found"))
     }
-console.log("zz");
 
     const review  = await reviewModel.findOne({productId , createdBy:req.user.id})
     if(review)
@@ -67,16 +60,13 @@ console.log("zz");
     }
     // add review 
 // update product
-console.log("gg");
 
 
     const updateReview = await reviewModel.create({orderId , productId , createdBy:req.user.id,rating ,comment})
-console.log("ggg");
 
 
     const updatedProduct = await calculateAvgAndUpdateProduct(productId)
 
-    console.log("gggg");
     
 
     return res.json({message:"review completed",updatedProduct})

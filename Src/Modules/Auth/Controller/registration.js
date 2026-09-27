@@ -39,7 +39,6 @@ const token2 = generateToken({payload:{email}})
                 <a href = "${req.protocol}://${req.headers.host}/auth/newconfirmationemail/${token2}">Reconfirmation Email </a>`
 
     await sendEmail({to:email,subject:"email Confirmation",html}).catch((err)=>{
-    console.log("error in sending email")
      return next(new Error(err))
    })
 
@@ -72,7 +71,6 @@ export const login = asyncHandler(async (req,res,next)=>{
     }
 
     const token = generateToken({payload:{id:user._id, email}})
-    console.log({iat:token.iat});
     
 
     return res.status(200).json({message:"login successfully" , token})
@@ -148,7 +146,6 @@ const token2 = generateToken({payload:{email:user.email}})
             //   await  user.save()
             const updateUser = await userModel.updateOne({email:user.email},{$inc:{confirmationCount:1}})
     await sendEmail({to:user.email,subject:"email Confirmation",html}).catch((err)=>{
-    console.log("error in sending email")
      return next(new Error(err))
    })
 
@@ -174,7 +171,6 @@ export const forgetPasswordLink = asyncHandler(async(req,res,next)=>{
     const html = `<a href = "${req.protocol}://${req.headers.host}/auth/resetpass/${emailtoken}">reset password </a>`
 
     await sendEmail({to:email,subject:"reset password",html}).catch((err)=>{
-    console.log("error in sending email")
      return next(new Error(err))
    })
 
@@ -236,7 +232,6 @@ await user.save()
  const html = ` your otp is here  ${forgetCode}`
 
     await sendEmail({to:email,subject:"reset password",html}).catch((err)=>{
-    console.log("error in sending email")
      return next(new Error(err))
    })
 

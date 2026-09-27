@@ -62,8 +62,6 @@ function fileUpload(customPath){
 
     const filePath = `uploads/${customPath}`
     const fullPath = path.join(__dirname,`../${filePath}`)
-    console.log({fullPath});
-    console.log({filePath});
     
     if(!fs.existsSync(fullPath))
     {

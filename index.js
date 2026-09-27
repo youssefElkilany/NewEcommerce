@@ -9,39 +9,39 @@ dotenv.config({ path: path.join(__dirname, './config/.env') })
 const app = express()
 
 
-const port = 3000
+const port = process.env.PORT || 3000
 
 Bootstrap(app , express)
 
-const dataMethods = ['body' , 'params' , 'query' , 'headers' , 'file']
-let applicableProducts = [1,2,3,4,5]
-let excludedProducts = [10,7,8,9,1]
+// const dataMethods = ['body' , 'params' , 'query' , 'headers' , 'file']
+// let applicableProducts = [1,2,3,4,5]
+// let excludedProducts = [10,7,8,9,1]
 
-let data = {
+// let data = {
 
-    body:{
-        name:"aaa"
-    },
-    params:{
-        age:10
-    }
-}
+//     body:{
+//         name:"aaa"
+//     },
+//     params:{
+//         age:10
+//     }
+// }
 
-dataMethods.forEach(methods =>{
-    if(data[methods])
-    {
-        console.log(data[methods]);
+// dataMethods.forEach(methods =>{
+//     if(data[methods])
+//     {
+//         console.log(data[methods]);
 
         
-    }
-})
+//     }
+// })
 
- if(applicableProducts?.some(id => excludedProducts?.includes(id)))
-    {
-        console.log("gg");   
-    }
+//  if(applicableProducts?.some(id => excludedProducts?.includes(id)))
+//     {
+//         console.log("gg");   
+//     }
 
 
 app.listen(port,()=>{
-    console.log(`server is connected at ${port}`);
+    console.log(`Server is running on port ${port}`);
 })

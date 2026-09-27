@@ -36,7 +36,6 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
         // products.isCart = true
         products = cart.products
          products.isCart = true
-         console.log({products});
     }
     
 
@@ -76,15 +75,12 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
         // user enters new Address data
     }
 
-    console.log({length:products.length});
     // product galy mrteen aw variants ygeely mrteen
 
      const currentProducts = products.map(item => String(item.productId))
     const currentVariants = products.map(item => String(item.variantId))
      const productSet = [...new Set([...currentProducts])]
     const variantSet = [...new Set([...currentVariants])]
-     console.log({productSet});
-    console.log({variantSet});
 
     if(currentVariants.length !== variantSet.length)
     {
@@ -98,8 +94,6 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
     // both empty means all products are applicable then we need to check excluded products
      if(applicableProducts?.length > 0 || applicableCategories?.length > 0)
     {
-        console.log("GGGGGGGGGGG");
-        console.log(["1","2"].every(product => ["3","4","1"].includes(product)));
         
         // will make it later
         if(applicableCategories?.includes())
@@ -116,9 +110,7 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
         // }
         //coupon mmkn y3ml 5asm 3la products menhom w yseeb ba2y products ?
     }
-    console.log({excludedProducts});
     
-     console.log(productSet.some(product => excludedProducts?.includes(String(product))));
     
       if(productSet?.some(product => excludedProducts?.includes(String(product))))
         {
@@ -165,16 +157,12 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
         })
 
         totalPrice += (Number(item.quantity) * Number(product.variants[0].finalPrice))
-        console.log({totalPrice});
         
         // applicable products and categories
         // delete items from cart
         
     }
-     console.log({products});
-    console.log({productArr});
     data.subTotal = totalPrice
- console.log({totalPrice});
  
     // check coupon // update usedBy of coupon with user after creating order
     if(data.coupon?.minOrderAmount > totalPrice)
@@ -185,8 +173,6 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
     {
         if(totalPrice * (data.coupon.discountValue / 100) > data.coupon.maxDiscountAmount)
         {
-            console.log({discount:totalPrice * (data.coupon.discountValue / 100)});
-            console.log({maxDiscountAmount:data.coupon.maxDiscountAmount});
             
             
             data.finalPrice= totalPrice - data.coupon.maxDiscountAmount
@@ -195,7 +181,6 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
             data.finalPrice= totalPrice - data.coupon.discountValue
         }
     }
-    console.log({totalPrice});
 
     data.createdBy = req.user.id
     data.phone = phone
@@ -210,8 +195,6 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
     // update Stock
     for (const items of products) { // take it from products array that came from frontEnd
         
-        console.log({variantId:items.variantId});
-        console.log({quantity:items.quantity});
         
         
         // const updateStock = await productModel.updateOne({_id:items._id,'variants._id':items.variantId,'variants.stock':{$gte:items.quantity}},

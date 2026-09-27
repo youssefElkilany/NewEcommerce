@@ -33,7 +33,6 @@ export const getProducts = asyncHandler(async(req,res,next)=>{
    excludedQuery.forEach(query => {
     delete filtedQuery[query]
    })
-   console.log(JSON.parse(JSON.stringify(filtedQuery).replace(/(gt|gte|lt|lte|eq|neq|in|nin)/g,match =>`$${match}`)))
 
     const product = await productModel.find().limit(size).skip(skip).sort(req.query.sort.replaceAll(',',' ')).find()
 
@@ -63,7 +62,6 @@ export const getProductVariant = asyncHandler(async(req,res,next)=>{
         _id:productId,
         'variants._id':variantId
     }).select('variants.$').lean()
-    console.log({product});
     
 
     if(!product)
@@ -85,11 +83,6 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
     const {subCategoryId , brandId , name , description , 
         price} = req.body
 
-        console.log(req.file);
-        console.log({files:req.files});
-        console.log({files2:req.files.mainImage});
-        console.log({files3:req.files.subImages});
-        console.log({specifications: JSON.parse(req.body.specifications)});
         
         
     const data = {}
@@ -160,7 +153,6 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
     data.subCategoryId = subCategoryId
     data.variants = variants
     data.createdBy = req.user.id
-    console.log({data})
     
 
      const product = await productModel.create(data)
@@ -199,7 +191,7 @@ export const addVariants = asyncHandler(async(req,res,next)=>{
 
 
     if(req.files?.subImages)
-    {console.log("gg");
+    {
     
         variants.subImages = []
         for (const image of req.files?.subImages) {
@@ -241,12 +233,10 @@ export const updateVariant = asyncHandler(async(req,res,next)=>{
         return next(new Error("product not found"))
     }
 
-    console.log({product});
     
 
     const variantObj = product.variants.find(variant => String(variant._id) === (variantId))
 
-    console.log({variantObj});
     
 
     if(hasPrice || hasdiscount)

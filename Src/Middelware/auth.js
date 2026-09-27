@@ -16,10 +16,8 @@ const Auth =  (roles = [])=>{
          if (!token) {
             return res.json({ message: "In-valid token" })
         }
-        console.log({token})
         
          const decodedToken = verifyToken({token})
-         console.log({decodedToken})
          
          if(!decodedToken?.id)
          {
@@ -43,7 +41,6 @@ const Auth =  (roles = [])=>{
           //    return next(new Error({ message: "u are not authorized" }))
           // }
 
-          console.log({iat:decodedToken.iat});
           // authorization here check roles
 
           req.user = user
