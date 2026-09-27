@@ -1,4 +1,5 @@
 import connectDB from "../DB/connection.js"
+import cors from 'cors'
 import userRouter from './Modules/User/user.route.js'
 import brandRouter from './Modules/Brand/brand.route.js'
 import productRouter from './Modules/Product/product.route.js'

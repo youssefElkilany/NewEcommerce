@@ -64,7 +64,7 @@ A modular REST API for an e-commerce platform, built with Node.js, Express, and 
 
 ### Prerequisites
 
-- Node.js 20.19 or newer (required by the installed Mongoose version)
+- Node.js 24.x (also used on Vercel)
 - MongoDB, either local or hosted
 - A Cloudinary account for image uploads
 - A Gmail account with an app password for email delivery
@@ -110,7 +110,7 @@ The server runs at `http://localhost:3000`.
 
 | Variable | Purpose |
 | --- | --- |
-| `DB_LOCAL` | MongoDB connection string |
+| `DB_ATLAS` | MongoDB connection string; use a hosted database on Vercel |
 | `SALT_ROUND` | bcrypt hashing rounds |
 | `TOKEN_SIGNATURE` | Secret used to sign and verify JWTs |
 | `expireTime` | JWT lifetime passed to `jsonwebtoken`, in seconds |
@@ -125,6 +125,53 @@ The server runs at `http://localhost:3000`.
 | `api_secret` | Cloudinary API secret |
 
 Never commit `config/.env`. It is already excluded by `.gitignore`.
+
+## Deploy to Vercel
+
+The root `vercel.json` selects Vercel's native Express framework. `index.js`
+exports the app for Vercel and starts a local server when running `npm start`.
+See [Vercel's Express documentation](https://vercel.com/docs/frameworks/backend/express).
+
+1. Push the project to your Git provider and import the repository into Vercel.
+2. Use the repository root as **Root Directory**, **Express** as the framework,
+   and **Node.js 24.x**. Keep the default build and output settings; this API
+   does not need a frontend build or an output directory.
+3. Add the variables from `.env.example` in Vercel's **Environment Variables**
+   settings for Production and any Preview deployments you intend to use.
+   Replace every placeholder with your actual value. Set `DB_ATLAS` to your
+   MongoDB Atlas connection string, `MOOD` to `production`, and `NODE_ENV` to
+   `production`. Variable names are case-sensitive: both `App` and `APP` are
+   currently used. Preserve the trailing space in `BEARER_KEY` (`Bearer `),
+   without including the surrounding quotes in the dashboard value.
+4. Ensure your Atlas database user can access the database and Atlas network
+   access permits connections from your Vercel deployment.
+5. Click **Deploy**. Redeploy after changing environment variables.
+
+Local secrets in `config/.env` are excluded from CLI uploads by `.vercelignore`;
+configure them in Vercel instead. `PORT` is only needed for local development.
+
+To deploy through the CLI after configuring the project and environment variables:
+
+```bash
+npx vercel
+npx vercel --prod
+```
+
+Existing API paths stay the same, for example
+`https://your-project.vercel.app/auth/login`. There is no `/` route, so a 404
+at the domain root is expected. You can check routing without a database write:
+
+```bash
+curl -i https://your-project.vercel.app/address
+```
+
+Without an authorization header, this should return the API's `invalid bearer key`
+error. Then test login with an existing account to verify database connectivity.
+
+Uploads use temporary disk storage before transfer to Cloudinary. Files on the
+function's disk are not persistent. Vercel Functions limit request bodies to
+4.5 MB, including multipart overhead; larger uploads need a direct-to-Cloudinary
+upload flow. See [Vercel Function limits](https://vercel.com/docs/functions/limitations).
 
 ## Authentication
 

@@ -1,0 +1,7 @@
+config/
+.env
+.env.*
+!.env.example
+node_modules/
+.git/
+tests/
