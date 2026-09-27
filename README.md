@@ -158,8 +158,6 @@ npx vercel --prod
 ```
 
 Existing API paths stay the same, for example
-`https://your-project.vercel.app/auth/login`. There is no `/` route, so a 404
-at the domain root is expected. You can check routing without a database write:
 
 ```bash
 curl -i https://your-project.vercel.app/address

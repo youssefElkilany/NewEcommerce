@@ -44,6 +44,9 @@ const Bootstrap = (app,express)=>{
   //   express.static(path.join(__dirname, '/uploads'))
   // )
 
+  app.get('/', (req, res) => {
+    res.status(200).json({ message: 'Welcome to the E-Commerce API' })
+})
     app.use('/auth',authRouter)
     app.use('/user',userRouter)
     app.use('/brand',brandRouter)
@@ -55,6 +58,9 @@ const Bootstrap = (app,express)=>{
     app.use('/cart',cartRouter)
     app.use('/order',orderRouter)
     app.use('/address',addressRouter)
+    app.use('*',(req,res,next)=>{
+        return next(new Error(`Route not found`))
+    })
     app.use(globalErrorHandling)
     connectDB()
 
