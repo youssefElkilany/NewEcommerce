@@ -54,6 +54,17 @@ const Bootstrap = (app,express)=>{
       }
     })
 
+    app.use(async (req, res, next) => {
+      try {
+        await connectDB()
+         console.log('Connecting to MongoDB...');
+        next()
+      } catch (err) {
+        console.error('MongoDB connection failed:', err.name)
+        next(new Error('Database connection unavailable', { cause: 503 }))
+      }
+    })
+
     app.use('/auth',authRouter)
     app.use('/user',userRouter)
     app.use('/brand',brandRouter)
@@ -72,7 +83,6 @@ app.all('/{*splat}', (req, res) => {
     return res.status(404).json({ message: 'Route not found' })
 })
     app.use(globalErrorHandling)
-    connectDB()
 
 }
 
