@@ -8,6 +8,7 @@ import { asyncHandler } from "../../../Utills/errorHandler.js";
 import { hash } from "../../../Utills/hashing.js";
 import { generateToken, verifyToken } from "../../../Utills/token.js";
 import { nanoid , customAlphabet } from "nanoid";
+import cartModel from "../../../../DB/Models/cart.model.js";
 
 
 
@@ -28,19 +29,9 @@ export const signUp = asyncHandler(async (req,res,next)=>{
     }
 
     
-const emailtoken =  generateToken({payload:{email}})
-const token2 = generateToken({payload:{email}})
 
 
-//body of email
- const html = `<a href = "${req.protocol}://${req.headers.host}/auth/emailConfirmation/${emailtoken}">EmailConfirmation </a>
-                <br>
-                <br>
-                <a href = "${req.protocol}://${req.headers.host}/auth/newconfirmationemail/${token2}">Reconfirmation Email </a>`
 
-    await sendEmail({to:email,subject:"email Confirmation",html}).catch((err)=>{
-     return next(new Error(err))
-   })
 
     const hashedPassword = hash({plainText:password})
     
@@ -50,6 +41,17 @@ const token2 = generateToken({payload:{email}})
     })
 
     const cart = await cartModel.create({createdBy:user._id})
+
+    const emailtoken =  generateToken({payload:{email}})
+    const token2 = generateToken({payload:{email},expiresIn:process.env.refreshExpireTime}) // for resend email
+
+    //body of email
+ const html = `<a href = "${req.protocol}://${req.headers.host}/auth/emailConfirmation/${emailtoken}">EmailConfirmation </a>
+                <br>
+                <br>
+                <a href = "${req.protocol}://${req.headers.host}/auth/newconfirmationemail/${token2}">Reconfirmation Email </a>`
+
+    await sendEmail({to:email,subject:"email Confirmation",html})
 
     return res.status(201).json({message:"sign up successfully" , user })
 })
@@ -134,7 +136,7 @@ export const ResendEmail = asyncHandler(async(req,res,next)=>{
     }
 
     const emailtoken =  generateToken({payload:{email:user.email}})
-const token2 = generateToken({payload:{email:user.email}})
+const token2 = generateToken({payload:{email:user.email},expiresIn:process.env.refreshExpireTime})
 
 
     const html = `<a href = "${req.protocol}://${req.headers.host}/auth/emailConfirmation/${emailtoken}">EmailConfirmation </a>
@@ -145,10 +147,8 @@ const token2 = generateToken({payload:{email:user.email}})
             //     user.confirmationCount = (0 || parseInt(user.confirmationCount)) + 1
             //   await  user.save()
             const updateUser = await userModel.updateOne({email:user.email},{$inc:{confirmationCount:1}})
-    await sendEmail({to:user.email,subject:"email Confirmation",html}).catch((err)=>{
-     return next(new Error(err))
-   })
-
+    await sendEmail({to:user.email,subject:"email Confirmation",html})
+    
    
     return res.status(200).json({message:"email is sent"})
 })
@@ -170,9 +170,7 @@ export const forgetPasswordLink = asyncHandler(async(req,res,next)=>{
 
     const html = `<a href = "${req.protocol}://${req.headers.host}/auth/resetpass/${emailtoken}">reset password </a>`
 
-    await sendEmail({to:email,subject:"reset password",html}).catch((err)=>{
-     return next(new Error(err))
-   })
+    await sendEmail({to:email,subject:"reset password",html})
 
  return res.status(200).json({message:"email is sent"})
 
@@ -231,9 +229,7 @@ await user.save()
 
  const html = ` your otp is here  ${forgetCode}`
 
-    await sendEmail({to:email,subject:"reset password",html}).catch((err)=>{
-     return next(new Error(err))
-   })
+    await sendEmail({to:email,subject:"reset password",html})
 
 return res.json({message:"done"})
 })

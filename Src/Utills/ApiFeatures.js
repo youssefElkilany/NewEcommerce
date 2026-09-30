@@ -31,7 +31,7 @@
             delete filtedQuery(query)
         })
 
-        this.mongooseQuery.find(JSON.parse(JSON.stringify(filtedQuery).replace(/(gt|gte|lt|lte|eq|neq|in|nin)/g,match =>`$${match}`)))
+        this.mongooseQuery?.find(JSON.parse(JSON.stringify(filtedQuery).replace(/(gt|gte|lt|lte|eq|neq|in|nin)/g,match =>`$${match}`)))
 
         return this
     }
@@ -43,10 +43,10 @@
     }
 
     search(){
-        this.mongooseQuery.find({
+        this.mongooseQuery?.find({
             $or:[
-                {name:{$regex:this.queryData.search,$options:'i'}},
-                {description:{$regex:this.queryData.search,$options:'i'}}
+                {name:{$regex:this.queryData?.search,$options:'i'}},
+                {description:{$regex:this.queryData?.search,$options:'i'}}
             ]}
         )
         return this

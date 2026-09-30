@@ -1,15 +1,14 @@
 
 // idempotency-key to not make order twice to same customer 
 // and race conditions
-
-import mongoose from "mongoose";
 import couponModel from "../../../../DB/Models/coupon.model.js";
 import productModel from "../../../../DB/Models/product.model.js";
 import { asyncHandler } from "../../../Utills/errorHandler.js";
 import cartModel from "../../../../DB/Models/cart.model.js";
 import orderModel from "../../../../DB/Models/order.model.js";
 import addressModel from "../../../../DB/Models/address.model.js";
-
+import payment from "../../../Utills/Payment.js";
+import Stripe from "stripe";
 // check coupon -> 
 // 1- code 
 // 2- expireDate 
@@ -53,7 +52,7 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
     }
     data.coupon = coupon
     }
-
+const shippingAddress = {}
      if(req.body.addressId) // hb2a a7oto abl product
     {
         const address = await addressModel.findOne({_id:req.body.addressId,userId:req.user.id})
@@ -61,15 +60,16 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
         {
             return next(new Error('address not found'))
         }
-         data.shippingAddress.name = address.name,
-         data.phone = address.phone,
-  data.shippingAddress.country = address.country,
-  data.shippingAddress.city = address.city,
-  data.shippingAddress.street = address.street,
-  data.shippingAddress.buildingNumber = address.buildingNumber,
-  data.shippingAddress.floor = address.floor,
-  data.shippingAddress.apartment = address.apartment ?? undefined,
-  data.shippingAddress.additionalInfo = address.additionalInfo ?? undefined
+          shippingAddress.name = address.name,
+         shippingAddress.phone = address.phone,
+  shippingAddress.country = address.country,
+  shippingAddress.city = address.city,
+  shippingAddress.street = address.street,
+  shippingAddress.buildingNumber = address.buildingNumber,
+  shippingAddress.floor = address.floor,
+  shippingAddress.apartment = address.apartment ?? undefined,
+  shippingAddress.additionalInfo = address.additionalInfo ?? undefined
+  data.shippingAddress = shippingAddress
     }
     else{
         // user enters new Address data
@@ -138,7 +138,7 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
         }
         // item = item.toObject()
 
-        products.name = product.name// ns2l lw 3ayzeen n3ml keda ehh ehy7sal
+        // products.name = product.name// ns2l lw 3ayzeen n3ml keda ehh ehy7sal
         
         if(product.variants[0].stock < item.quantity)
         {
@@ -171,21 +171,29 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
     }
     if(data.coupon?.discountType === 'percentage')
     {
+        // check maxDiscountAmount if discountValue is greater than maxDiscountAmount then maxDiscountAmount will be applied
         if(totalPrice * (data.coupon.discountValue / 100) > data.coupon.maxDiscountAmount)
-        {
-            
-            
+        { 
             data.finalPrice= totalPrice - data.coupon.maxDiscountAmount
         }
         else{
-            data.finalPrice= totalPrice - data.coupon.discountValue
+            let discountAmount = totalPrice * (data.coupon.discountValue / 100)
+            data.finalPrice= totalPrice - discountAmount
         }
+    }
+    else if(data.coupon?.discountType === 'fixed')
+    {
+        data.finalPrice= totalPrice - data.coupon.discountValue
+    }
+    else{
+        data.finalPrice= totalPrice
     }
 
     data.createdBy = req.user.id
     data.phone = phone
     data.products = productArr
     data.note = req.body.note ?? undefined
+    data.paymentMethod = req.body.paymentMethod ?? 'Cash'
 
     const order = await orderModel.create(data)
 
@@ -193,7 +201,7 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
     // after creating order we decrease stock of products and add user to coupon and remove items from cart
 
     // update Stock
-    for (const items of products) { // take it from products array that came from frontEnd
+    for (const items of productArr) { // take it from products array that came from frontEnd
         
         
         
@@ -246,6 +254,45 @@ export const createOrder = asyncHandler(async(req,res,next)=>{
         const coupon = await couponModel.updateOne({code},{$addToSet:{usedBy:req.user.id}})
     }
 
+    if(req.body.paymentMethod === 'Card')
+    {
+        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+        if(code)
+        {
+            if(data.coupon.discountType === 'percentage')
+            {
+                const coupon = await stripe.coupons.create({percent_off:data.coupon.discountValue,duration:'once'})
+                data.stripeCouponId = coupon.id
+            }
+            else if(data.coupon.discountType === 'fixed')
+            {
+                const coupon = await stripe.coupons.create({amount_off:data.coupon.discountValue * 100,currency:'usd',duration:'once'})
+                data.stripeCouponId = coupon.id
+            }
+        }
+  const session =  await payment({
+        stripe,
+        customer_email:req.user.email,
+        metadata:{
+            orderId:order._id.toString()
+    },
+    cancel_url:`${process.env.STRIPE_CANCEL_URL}?orderId=${order._id.toString()}`,
+    line_items:productArr.map(item=>{
+        return {
+            price_data: {
+                currency: 'usd',
+                product_data: {
+                    name: item.name
+                },
+                unit_amount: item.paymentPrice * 100 // Stripe expects amount in cents
+            },
+            quantity: item.quantity,
+            discounts: data.stripeCouponId ? [{coupon: data.stripeCouponId}] : []
+        }
+    })
+})
+ return res.json({message:"order created successfully",order,session})
+    }
 
     // payment + phone
     return res.json({message:"order created successfully",order})
@@ -291,3 +338,71 @@ export const cancelOrder = asyncHandler(async(req,res,next)=>{
     return res.json({message:"order cancelled"})
 
 })
+
+
+
+export const webhookEndpoint = asyncHandler(async (req, res) => {
+  let event = req.body;
+  // Only verify the event if you have an endpoint secret defined.
+  // Otherwise use the basic event deserialized with JSON.parse
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (endpointSecret) {
+    // Get the signature sent by Stripe
+    const signature = req.headers['stripe-signature'];
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        endpointSecret
+      );
+    } catch (err) {
+      console.log(`⚠️  Webhook signature verification failed.`, err.message);
+      return res.sendStatus(400);
+    }
+  }
+
+  // Handle the event
+  if(event.type !== 'payment_intent.succeeded') {
+    const {orderId} = event.data.object.metadata
+    // update status to rejected then elmfrood increment stock of products and remove user from coupon
+    const updateOrder = await orderModel.updateOne({_id:orderId},{status:'rejected'})
+    if(updateOrder.modifiedCount === 0)
+    {
+        return res.status(400).json({message:"something went wrong in updating order status"})
+    }
+    // increment stock of products
+    for (const items of updateOrder.products) {
+        await productModel.updateOne({_id:items.productId,'variants._id':items.variantId},{'variants.$.stock':{$inc:parseInt(items.quantity)}})
+    }
+    // remove user from coupon if coupon is used
+    if(updateOrder?.couponId)
+    {
+        await couponModel.updateOne({_id:updateOrder.couponId},{$pull:{
+            usedBy:updateOrder.createdBy
+        }})
+    }
+  }
+
+   const updateOrder = await orderModel.updateOne({_id:orderId},{status:'placed'})
+
+//   switch (event.type) {
+//     case 'payment_intent.succeeded':
+//       const paymentIntent = event.data.object;
+//       console.log(`PaymentIntent for ${paymentIntent.amount} was successful!`);
+//       // Then define and call a method to handle the successful payment intent.
+//       // handlePaymentIntentSucceeded(paymentIntent);
+//       break;
+//     case 'payment_method.attached':
+//       const paymentMethod = event.data.object;
+//       // Then define and call a method to handle the successful attachment of a PaymentMethod.
+//       // handlePaymentMethodAttached(paymentMethod);
+//       break;
+//     default:
+//       // Unexpected event type
+//       console.log(`Unhandled event type ${event.type}.`);
+//   }
+
+  // Return a 200 res to acknowledge receipt of the event
+  res.status(200).json({message:"webhook received and order updated successfully"});
+});

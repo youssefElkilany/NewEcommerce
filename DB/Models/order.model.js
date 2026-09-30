@@ -40,7 +40,7 @@ const orderSchema = new Schema({
     couponId:{type:Types.ObjectId,ref:'Coupon'},
     subTotal:{type:Number,required:true},
     finalPrice:{type:Number,required:true},
-    paymentMethod:{type:String,default:'Cash',enum:['Cash','card']},
+    paymentMethod:{type:String,default:'Cash',enum:['Cash','Card']},
     reason:String,
     createdBy:{
         type:Types.ObjectId,

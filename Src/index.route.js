@@ -44,6 +44,16 @@ const Bootstrap = (app,express)=>{
   //   express.static(path.join(__dirname, '/uploads'))
   // )
 
+    app.use((req,res,next)=>{
+      if(req.originalUrl == '/order/webhook')
+      { // don't convert it from buffer let it as it is
+        next()
+      }
+      else{
+        express.json()(req,res,next)
+      }
+    })
+
     app.use('/auth',authRouter)
     app.use('/user',userRouter)
     app.use('/brand',brandRouter)

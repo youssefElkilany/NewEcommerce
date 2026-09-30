@@ -21,7 +21,11 @@ async function sendEmail({ to, cc, bcc, subject, html, attachments = [] } = {}) 
     });
 
  
-    return info.rejected.length ? false : true
+    if (info.rejected.length || !info.accepted.length) {
+        throw new Error("Email could not be sent: the mail server did not accept all recipients")
+    }
+
+    return true
 }
 
 
