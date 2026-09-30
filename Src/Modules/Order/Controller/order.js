@@ -194,6 +194,7 @@ const shippingAddress = {}
     data.products = productArr
     data.note = req.body.note ?? undefined
     data.paymentMethod = req.body.paymentMethod ?? 'Cash'
+    data.status = req.body.paymentMethod ? 'pendingPayment' :'placed'
 
     const order = await orderModel.create(data)
 
@@ -341,12 +342,12 @@ export const cancelOrder = asyncHandler(async(req,res,next)=>{
 
 
 
-export const webhookEndpoint = asyncHandler(async (req, res) => {
+export const webhook = asyncHandler(async (req, res) => {
   let event = req.body;
   // Only verify the event if you have an endpoint secret defined.
   // Otherwise use the basic event deserialized with JSON.parse
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const endpointSecret = process.env.endpointSecret;
   if (endpointSecret) {
     // Get the signature sent by Stripe
     const signature = req.headers['stripe-signature'];
@@ -361,10 +362,11 @@ export const webhookEndpoint = asyncHandler(async (req, res) => {
       return res.sendStatus(400);
     }
   }
-
+  console.log({event});
+  
+const {orderId} = event.data.object.metadata
   // Handle the event
-  if(event.type !== 'payment_intent.succeeded') {
-    const {orderId} = event.data.object.metadata
+  if(event.type !== 'checkout.session.completed') {
     // update status to rejected then elmfrood increment stock of products and remove user from coupon
     const updateOrder = await orderModel.updateOne({_id:orderId},{status:'rejected'})
     if(updateOrder.modifiedCount === 0)

@@ -37,7 +37,7 @@ const Bootstrap = (app,express)=>{
 //     next()
 //   })
 
-    app.use(express.json())    
+    // app.use(express.json())    
 
   //   app.use(
   //   '/uploads',

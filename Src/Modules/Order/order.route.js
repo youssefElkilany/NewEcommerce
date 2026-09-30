@@ -5,6 +5,6 @@ import express from 'express'
 const router = Router()
 
 router.post('/',Auth(),orderController.createOrder)
-router.post('/webhook', express.raw({type: 'application/json'},orderController.webhookEndpoint))
+router.post('/webhook', express.raw({type: 'application/json'}), orderController.webhook)
 
 export default router

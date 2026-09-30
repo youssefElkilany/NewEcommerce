@@ -35,7 +35,7 @@ const orderSchema = new Schema({
     }],
 
     phone:[{type:String,required:true}],
-    status:{type:String,default:'placed',enum:['waitingForPayment','onTheWay','cancelled','delivered','placed']},
+    status:{type:String,default:'placed',enum:['pendingPayment','onTheWay','cancelled','delivered','placed']},
     note:{type:String},
     couponId:{type:Types.ObjectId,ref:'Coupon'},
     subTotal:{type:Number,required:true},
