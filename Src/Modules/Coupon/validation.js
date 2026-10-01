@@ -1,7 +1,8 @@
 
 import Joi from 'joi';
+import { id } from '../../Utills/validationSchemas.js';
 
-const objectId = Joi.string().pattern(/^[a-fA-F0-9]{24}$/).lowercase();
+const couponId = id.lowercase();
 
 export const createCouponSchema = Joi.object({
   code: Joi.string().trim().uppercase().required(),
@@ -20,9 +21,9 @@ export const createCouponSchema = Joi.object({
   expireDate: Joi.date().iso().greater('now').required(),
   usageLimit: Joi.number().integer().positive().allow(null).default(null),
   usageLimitPerUser: Joi.number().integer().positive().default(1),
-  applicableProducts: Joi.array().items(objectId).unique().default([]),
-  applicableCategories: Joi.array().items(objectId).unique().default([]),
-  excludedProducts: Joi.array().items(objectId).unique().default([])
+  applicableProducts: Joi.array().items(couponId).unique().default([]),
+  applicableCategories: Joi.array().items(couponId).unique().default([]),
+  excludedProducts: Joi.array().items(couponId).unique().default([])
 }).required();
 
 export const validateCreateCoupon = (req, res, next) => {

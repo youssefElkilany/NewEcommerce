@@ -1,4 +1,5 @@
 import Joi from 'joi'
+import { id } from '../../Utills/validationSchemas.js'
 
 const locationSchema = Joi.object({
     type:Joi.string().valid('Point').default('Point'),
@@ -37,7 +38,7 @@ const createAddressSchema = Joi.object({
 
 const updateAddressSchema = Joi.object(addressShape).min(1).required()
 
-const addressIdSchema = Joi.string().hex().length(24).required()
+const addressIdSchema = id.required()
 
 const validateBody = (schema) => (req,res,next) => {
     const {error,value} = schema.validate(req.body,{abortEarly:false})

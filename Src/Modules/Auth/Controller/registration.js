@@ -22,7 +22,7 @@ export const signUp = asyncHandler(async (req,res,next)=>{
         return next(new Error("password mismatch"))
     }
 
-    const checkUser = await userModel.findOne({email})
+    const checkUser = await userModel.findOne({email:email.toLowerCase()})
     if(checkUser)
     {
         return next(new Error("email already exist"))
@@ -66,7 +66,7 @@ export const login = asyncHandler(async (req,res,next)=>{
     {
         return next(new Error("email not found"))
     }
-    const flag = compare(password, user.password)//wrong here
+    const flag = await compare(password, user.password)
     if(!flag)
     {
         return next(new Error("wrong password"))
