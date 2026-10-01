@@ -2,10 +2,12 @@ import categoryModel from '../../../../DB/Models/category.model.js'
 import {asyncHandler} from '../../../Utills/errorHandler.js'
 import cloudinary from '../../../Utills/Cloudinary.js'
 import slugify from "slugify"
+import ApiFeatures from '../../../Utills/ApiFeatures.js'
 
 export const getCategory = asyncHandler(async(req,res,next)=>{
-
-    const category = await categoryModel.find().populate('subcategory')
+    // no search
+    const apiFeature = new ApiFeatures(categoryModel.find(),req.query).filter().sort().paginate().select()
+    const category = await apiFeature.mongooseQuery
     if(category.length === 0)
     {
         return next(new Error("no categories yet"))

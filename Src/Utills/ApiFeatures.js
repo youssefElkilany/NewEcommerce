@@ -8,15 +8,19 @@
 
     paginate()
     {
-        let {page , size} = this.queryData
-        if(!page || page <=0)
-        {
-            page = 1
-        }
-        if(!size || size <=0)
-        {
-            size = 3
-        }
+         const requestedPage = Number(this.queryData?.page);
+         const requestedSize = Number(this.queryData?.size);
+
+         // validate that it must be integer and positive number else default
+    const page =
+        Number.isSafeInteger(requestedPage) && requestedPage > 0
+            ? requestedPage
+            : 1
+
+    const size =
+        Number.isSafeInteger(requestedSize) && requestedSize > 0
+            ? Math.min(requestedSize, 100)
+            : 3
 
         const skip = (page-1)*size
         this.mongooseQuery.skip(parseInt(skip)).limit(parseInt(size))
@@ -25,28 +29,40 @@
 
     filter()
     { // ana mmkn a7ot 7aget filter gowaha b3deha a5ot filter bas mn 8eer delete ba2y el7aga
-        const excludedQuery = ['sort' , 'search' , 'select' , 'field']
-        const filtedQuery = {...this.queryData}
+        const excludedQuery = ['sort' , 'search' , 'select' , 'field' , "page" , "size"]
+        const filteredQuery = {...this.queryData}
         excludedQuery.forEach(query=>{
-            delete filtedQuery(query)
+            delete filteredQuery[query]
         })
 
-        this.mongooseQuery?.find(JSON.parse(JSON.stringify(filtedQuery).replace(/(gt|gte|lt|lte|eq|neq|in|nin)/g,match =>`$${match}`)))
+        this.mongooseQuery?.find(JSON.parse(JSON.stringify(filteredQuery).replace(/(gt|gte|lt|lte|eq|neq|in|nin)/g,match =>`$${match}`)))
 
         return this
     }
     
     sort()
     {
-        this.mongooseQuery.sort(this.queryData?.sort?.replaceAll(',',' '))
+       const sort = this.queryData?.sort;
+
+    this.mongooseQuery.sort(
+        typeof sort === 'string' && sort.trim()
+            ? sort.replaceAll(',', ' ')
+            : { createdAt: -1, _id: -1 }
+    );
         return this
     }
 
-    search(){
+    search(){ 
+
+         const search = this.queryData?.search;
+
+    if (typeof search !== 'string' || !search.trim()) {
+        return this;
+    }
         this.mongooseQuery?.find({
             $or:[
-                {name:{$regex:this.queryData?.search,$options:'i'}},
-                {description:{$regex:this.queryData?.search,$options:'i'}}
+                {name:{$regex:search.trim(),$options:'i'}},
+                {description:{$regex:search.trim(),$options:'i'}}
             ]}
         )
         return this
@@ -54,7 +70,9 @@
 
     select(){
 
-        this.mongooseQuery.select(this.mongooseQuery?.fields?.replaceAll(',',' '))
+        this.mongooseQuery.select(this.queryData?.fields?.replaceAll(',',' '))
         return this
     }
 }
+
+export default ApiFeatures

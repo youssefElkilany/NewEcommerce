@@ -6,6 +6,7 @@ import cloudinary from '../../../Utills/Cloudinary.js'
 import { nanoid , customAlphabet } from 'nanoid'
 import slugify from 'slugify'
 import { isObjectIdOrHexString } from 'mongoose'
+import ApiFeatures from '../../../Utills/ApiFeatures.js'
 
 const generateSku = customAlphabet(
   'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -15,30 +16,11 @@ const generateSku = customAlphabet(
 
 export const getProducts = asyncHandler(async(req,res,next)=>{
 
-    // paginate
-    let {page,size} = req.query
 
-    if(!page || page <=0)
-    {
-        page = 1
-    }
-    if(!size || size <= 0)
-    {
-        size = 5
-    }
-    const skip = (page - 1) * size
-    // filter
-    const excludedQuery = ['sort' , 'search' , 'page' , 'size' , 'select']
-   const filtedQuery = {...req.query}
-   excludedQuery.forEach(query => {
-    delete filtedQuery[query]
-   })
+const apiFeatures = new ApiFeatures(req.query , productModel.find()).paginate().filter().sort().search().select()
 
-    const product = await productModel.find().limit(size).skip(skip).sort(req.query.sort.replaceAll(',',' ')).find()
-
-
-    
-
+const product = await apiFeatures.mongooseQuery;
+   
     if(product.length === 0)
     {
         return next(new Error('no Products found', {cause:404}))
@@ -97,13 +79,6 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
     {
         return next(new Error("brand not found"))
     }
-
-
-    // finalPrice = price * discount
-    // variants
-    // color
-    // size
-    // specifications
     
 
     if(req.body.specifications)
@@ -125,24 +100,50 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
     }// variants =>  price - finalPrice - discount - stock - sku - mainImage - subImage - options
 
 
+    // faster in upload but need clean up if upload failed in any of the images
      const cloudId = nanoid()
-    const {secure_url , public_id} = await cloudinary.uploader.upload
-    (req.files.mainImage[0].path , {folder:`${process.env.APP}/product/${cloudId}`})
-    
-    if(req.files?.subImages?.length !==0)
+     const [mainImage , subImages] = await Promise.all([
+        cloudinary.uploader.upload
+    (req.files.mainImage[0].path , {folder:`${process.env.APP}/product/${cloudId}`}),
+    req.files.subImages !== undefined ? req.files.subImages.map(image =>
+                    cloudinary.uploader.upload(image.path, {
+                        folder: `${process.env.APP}/product/${cloudId}/subImages`
+                    })
+                ) : []
+     ])
+     
+    data.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
+    if(subImages.length > 0)
     {
-             variants.subImages = []
-        for (const image of req.files.subImages) {
-            const {secure_url , public_id} = await cloudinary.uploader.upload
-     (image.path , {folder:`${process.env.APP}/product/${cloudId}/subImages`})
-
-     variants.subImages.push({secure_url , public_id})
-        }
-        // data.subImages = imageIds
+        variants.subImages = subImages.map(images =>{
+            return {secure_url:images.secure_url , public_id:images.public_id}
+        })
     }
+    // const {secure_url , public_id} = await cloudinary.uploader.upload
+    // (req.files.mainImage[0].path , {folder:`${process.env.APP}/product/${cloudId}`})
+    
+    // if(req.files?.subImages !== undefined)
+    // {
+    //     const timerLabel = `subimages:${cloudId}`
+    //     console.time(timerLabel)
+    //     try {
+    //         const uploadedImages = await Promise.all(
+    //             req.files.subImages.map(image =>
+    //                 cloudinary.uploader.upload(image.path, {
+    //                     folder: `${process.env.APP}/product/${cloudId}/subImages`
+    //                 })
+    //             )
+    //         )
+    //         variants.subImages = uploadedImages.map(
+    //             ({ secure_url, public_id }) => ({ secure_url, public_id })
+    //         )
+    //     } finally {
+    //         console.timeEnd(timerLabel)
+    //     }
+    // }
     
     variants.sku = `SKU-${generateSku()}`
-    variants.mainImage = {secure_url , public_id}
+    //  variants.mainImage = {secure_url , public_id}
     data.slug = slugify(name)
     variants.price = Number(price)
     variants.finalPrice = Number.parseFloat(price - (((req.body.discount || 0 ) / 100) * price)).toFixed(2)
@@ -164,7 +165,6 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
 export const addVariants = asyncHandler(async(req,res,next)=>{
     const {productId} = req.params
     const {price} = req.body
-    const {mainImage} = req.files
     const variants = {}
 
     const product = await productModel.findOne({_id:productId, createdBy:req.user.id})
@@ -186,19 +186,28 @@ export const addVariants = asyncHandler(async(req,res,next)=>{
         variants.options = JSON.parse(req.body.options)
     }
 
-     const {secure_url , public_id} = await cloudinary.uploader.upload
-    (mainImage[0].path , {folder:`${process.env.APP}/product/${product.cloudId}`})
+    //  const {secure_url , public_id} = await cloudinary.uploader.upload
+    // (mainImage[0].path , {folder:`${process.env.APP}/product/${product.cloudId}`})
 
 
-    if(req.files?.subImages)
+   // faster in upload but need clean up if upload failed in any of the images
+     const cloudId = nanoid()
+     const [mainImage , subImages] = await Promise.all([
+        cloudinary.uploader.upload
+    (req.files.mainImage[0].path , {folder:`${process.env.APP}/product/${cloudId}`}),
+    req.files.subImages !== undefined ? req.files.subImages.map(image =>
+                    cloudinary.uploader.upload(image.path, {
+                        folder: `${process.env.APP}/product/${cloudId}/subImages`
+                    })
+                ) : []
+     ])
+     data.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
+
+    if(subImages.length > 0)
     {
-    
-        variants.subImages = []
-        for (const image of req.files?.subImages) {
-             const {secure_url , public_id} = await cloudinary.uploader.upload
-    (image.path , {folder:`${process.env.APP}/product/${product.cloudId}`})
-    variants.subImages.push({secure_url , public_id})
-        }
+        variants.subImages = subImages.map(images =>{
+            return {secure_url:images.secure_url , public_id:images.public_id}
+        })
     }
 
     variants.mainImage = {secure_url , public_id}

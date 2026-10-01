@@ -35,11 +35,11 @@ const Auth =  (roles = [])=>{
           {
             return next(new Error("expired Token you need to sign in again",{cause:400}))
           }
-
-          // if(!roles?.includes(user.role))
-          // {
-          //    return next(new Error({ message: "u are not authorized" }))
-          // }
+          
+          if(!roles?.includes(user.role))
+          {
+             return next(new Error( "u are not authorized" ,{cause:403}))
+          }
 
           // authorization here check roles
 
