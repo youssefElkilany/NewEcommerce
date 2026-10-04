@@ -5,39 +5,101 @@ import productModel from '../../../../DB/Models/product.model.js'
 import cloudinary from '../../../Utills/Cloudinary.js'
 import { nanoid , customAlphabet } from 'nanoid'
 import slugify from 'slugify'
-import { isObjectIdOrHexString } from 'mongoose'
-import ApiFeatures from '../../../Utills/ApiFeatures.js'
+import AggregationApiFeatures from '../../../Utills/AggregationApiFeatures.js'
 
 const generateSku = customAlphabet(
   'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
   10
-);
+);  
 
+export const getrelatedBrands = asyncHandler(async(req,res,next)=>{
 
+    const {subCategoryId} = req.params
+
+    const brands = await productModel.distinct('brandName', {subCategoryId:subCategoryId})
+    console.log({brands})
+    return res.status(200).json({
+        message:"related brands retrieved successfully",
+        brands
+    })
+})
+
+// Search/browse selects the highest-discount available variant per product.
+// Filters return a separate product entry for each matching available variant.
 export const getProducts = asyncHandler(async(req,res,next)=>{
 
-
-const apiFeatures = new ApiFeatures(req.query , productModel.find()).paginate().filter().sort().search().select()
-
-const product = await apiFeatures.mongooseQuery;
+    let apiFeatures
+    try {
+        apiFeatures = new AggregationApiFeatures(req.query, productModel.aggregate())
+            .filter().search().sort().paginate().select()
+    } catch (error) {
+        return next(error)
+    }
+    const products = await apiFeatures.mongooseQuery
    
-    if(product.length === 0)
-    {
-        return next(new Error('no Products found', {cause:404}))
+    return res.status(200).json({
+        products
+    })
+})
+
+// general search like name , description view first variant only
+// variants search like price , stock , options view all variants that match the search
+export const getProduct = asyncHandler(async(req,res,next)=>{
+
+    const conditions = []
+    for (const [parameter, field, operator] of [
+        ['minStock', 'stock', '$gte'],
+        ['maxStock', 'stock', '$lte'],
+        ['minPrice', 'price', '$gte'],
+        ['maxPrice', 'price', '$lte']
+    ]) {
+        const value = req.query[parameter]
+        if (value === undefined) continue
+
+        if (typeof value !== 'string' || !value.trim() ||
+            !Number.isFinite(Number(value)) || Number(value) < 0) {
+            return next(new Error(`${parameter} must be a non-negative number`, {cause:400}))
+        }
+        conditions.push({[operator]: [`$$variant.${field}`, Number(value)]})
     }
 
-    return res.status(200).json({
-        product
-    })
+    // For example: ?options.color=Black&options.size=M
+    for (const [key, value] of Object.entries(req.query)) {
+        if (!key.startsWith('options.')) continue
+        const option = key.slice('options.'.length)
+        if (!/^[a-zA-Z0-9_-]+$/.test(option) || typeof value !== 'string') {
+            return next(new Error('Invalid variant option filter', {cause:400}))
+        }
+        conditions.push({$eq: [`$$variant.options.${option}`, {$literal:value}]})
+    }
+
+    // --------------- search
+    const match = {isDeleted:false}
+    if (typeof req.query.search === 'string' && req.query.search.trim()) {
+        const search = req.query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        match.$or = [
+            {name:{$regex:search, $options:'i'}},
+            {description:{$regex:search, $options:'i'}}
+        ]
+    }
+// ----------------- search
+    const pipeline = [
+        {$match:match},
+        {$set:{variants:conditions.length
+            ? {$filter:{input:'$variants', as:'variant', cond:{$and:conditions}}}
+            : {$slice:['$variants', 1]}
+        }}
+    ]
+    // Apply every condition to the same variant and omit products with no matches.
+    if (conditions.length) pipeline.push({$match:{'variants.0':{$exists:true}}})
+
+    const product = await productModel.aggregate(pipeline)
+
+    return res.json({product})
 })
 
 export const getProductVariant = asyncHandler(async(req,res,next)=>{
     const {productId , variantId} = req.params
-
-    // if(!isObjectIdOrHexString(productId) || !isObjectIdOrHexString(variantId))
-    // {
-    //     return next(new Error('Invalid productId or variantId', {cause:400}))
-    // }
 
     // Return only the variant matched by variants._id, not the full array.
     const product = await productModel.findOne({
@@ -111,14 +173,15 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
                     })
                 ) : []
      ])
-     
+
     data.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
     if(subImages.length > 0)
     {
         variants.subImages = subImages.map(images =>{
             return {secure_url:images.secure_url , public_id:images.public_id}
         })
-    }
+    }// compare them later
+
     // const {secure_url , public_id} = await cloudinary.uploader.upload
     // (req.files.mainImage[0].path , {folder:`${process.env.APP}/product/${cloudId}`})
     
@@ -154,6 +217,7 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
     data.subCategoryId = subCategoryId
     data.variants = variants
     data.createdBy = req.user.id
+    data.brandName = brand.name
     
 
      const product = await productModel.create(data)
@@ -201,7 +265,7 @@ export const addVariants = asyncHandler(async(req,res,next)=>{
                     })
                 ) : []
      ])
-     data.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
+     variants.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
 
     if(subImages.length > 0)
     {
@@ -210,7 +274,7 @@ export const addVariants = asyncHandler(async(req,res,next)=>{
         })
     }
 
-    variants.mainImage = {secure_url , public_id}
+   // variants.mainImage = {secure_url , public_id}
     variants.sku = `SKU-${generateSku()}`
     variants.finalPrice = Number.parseFloat(price - (price * ((req.body.discount || 0) / 100))).toFixed(2)
     variants.price = price

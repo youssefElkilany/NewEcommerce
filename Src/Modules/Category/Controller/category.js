@@ -6,7 +6,7 @@ import ApiFeatures from '../../../Utills/ApiFeatures.js'
 
 export const getCategory = asyncHandler(async(req,res,next)=>{
     // no search
-    const apiFeature = new ApiFeatures(categoryModel.find(),req.query).filter().sort().paginate().select()
+    const apiFeature = new ApiFeatures(categoryModel.find(),req.query).filter().sort().paginate()//.select()
     const category = await apiFeature.mongooseQuery
     if(category.length === 0)
     {

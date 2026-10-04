@@ -78,10 +78,10 @@ const productSchema = new Schema({
         type:Object
     }],
 
-        // isActive: {
-        //   type: Boolean,
-        //   default: true
-        // }
+        isActive: {
+          type: Boolean,
+          default: true
+        }
       }
     ],
      ratings: {
@@ -111,6 +111,10 @@ const productSchema = new Schema({
     brandId:{
         type:Types.ObjectId,
         ref:'Brand',
+        required:true
+    },
+    brandName:{
+        type:String,
         required:true
     },
     createdBy:{

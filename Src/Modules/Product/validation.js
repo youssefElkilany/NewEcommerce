@@ -23,6 +23,20 @@ const requiredVariantImages = variantImages.keys({
     mainImage: Joi.array().items(imageFile).length(1).required()
 }).required()
 
+export const getProducts = Joi.object({
+    page: Joi.number().integer().min(1).max(1000000),
+    size: Joi.number().integer().min(1).max(100),
+    search: Joi.string().trim().min(1).max(100),
+    brandId: id,
+    subCategoryId: id,
+    minPrice:variantFields.price,
+    maxPrice:variantFields.price,
+    discount: variantFields.discount,
+    rating: Joi.number().min(0).max(5),
+    sort: Joi.string().pattern(/^-?(?:name|createdAt|ratings\.average)(?:,-?(?:name|createdAt|ratings\.average))*$/),
+    fields: Joi.string().pattern(/^(?:_id|name|description|slug|brandId|subCategoryId|variants|ratings|createdAt|updatedAt)(?:,(?:_id|name|description|slug|brandId|subCategoryId|variants|ratings|createdAt|updatedAt))*$/)
+}).required()
+
 export const addProduct = Joi.object({
     name: name.required(),
     description: Joi.string().trim().min(1).required(),
