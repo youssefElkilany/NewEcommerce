@@ -28,7 +28,7 @@ export const getProducts = Joi.object({
     size: Joi.number().integer().min(1).max(100),
     search: Joi.string().trim().min(1).max(100),
     brandId: id,
-    subCategoryId: id,
+    subCategoryId: Joi.alternatives().try(id, Joi.array().items(id.required()).min(1)),
     minPrice:variantFields.price,
     maxPrice:variantFields.price,
     discount: variantFields.discount,

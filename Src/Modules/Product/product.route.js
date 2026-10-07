@@ -20,5 +20,4 @@ router.patch('/:productId/variant/:variantId',Auth([roles.Seller]), fileUpload()
 router.delete('/:productId/variant/:variantId',Auth([roles.Seller]), validationn(schemas.deleteVariant),productController.deleteVariant)
 
 router.get('/:subCategoryId/brand',productController.getrelatedBrands)
-router.get('/product',productController.getProduct)
 export default router

@@ -42,61 +42,6 @@ export const getProducts = asyncHandler(async(req,res,next)=>{
     })
 })
 
-// general search like name , description view first variant only
-// variants search like price , stock , options view all variants that match the search
-export const getProduct = asyncHandler(async(req,res,next)=>{
-
-    const conditions = []
-    for (const [parameter, field, operator] of [
-        ['minStock', 'stock', '$gte'],
-        ['maxStock', 'stock', '$lte'],
-        ['minPrice', 'price', '$gte'],
-        ['maxPrice', 'price', '$lte']
-    ]) {
-        const value = req.query[parameter]
-        if (value === undefined) continue
-
-        if (typeof value !== 'string' || !value.trim() ||
-            !Number.isFinite(Number(value)) || Number(value) < 0) {
-            return next(new Error(`${parameter} must be a non-negative number`, {cause:400}))
-        }
-        conditions.push({[operator]: [`$$variant.${field}`, Number(value)]})
-    }
-
-    // For example: ?options.color=Black&options.size=M
-    for (const [key, value] of Object.entries(req.query)) {
-        if (!key.startsWith('options.')) continue
-        const option = key.slice('options.'.length)
-        if (!/^[a-zA-Z0-9_-]+$/.test(option) || typeof value !== 'string') {
-            return next(new Error('Invalid variant option filter', {cause:400}))
-        }
-        conditions.push({$eq: [`$$variant.options.${option}`, {$literal:value}]})
-    }
-
-    // --------------- search
-    const match = {isDeleted:false}
-    if (typeof req.query.search === 'string' && req.query.search.trim()) {
-        const search = req.query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        match.$or = [
-            {name:{$regex:search, $options:'i'}},
-            {description:{$regex:search, $options:'i'}}
-        ]
-    }
-// ----------------- search
-    const pipeline = [
-        {$match:match},
-        {$set:{variants:conditions.length
-            ? {$filter:{input:'$variants', as:'variant', cond:{$and:conditions}}}
-            : {$slice:['$variants', 1]}
-        }}
-    ]
-    // Apply every condition to the same variant and omit products with no matches.
-    if (conditions.length) pipeline.push({$match:{'variants.0':{$exists:true}}})
-
-    const product = await productModel.aggregate(pipeline)
-
-    return res.json({product})
-})
 
 export const getProductVariant = asyncHandler(async(req,res,next)=>{
     const {productId , variantId} = req.params

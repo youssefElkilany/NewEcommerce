@@ -44,11 +44,15 @@ export default class AggregationApiFeatures {
         for (const field of ['brandId', 'subCategoryId']) {
             const value = this.queryData[field]
             if (value === undefined) continue
-            if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) {
-                throw badRequest(`${field} must be a valid ObjectId`)
+            const isMultiple = field === 'subCategoryId' && Array.isArray(value)
+            const values = isMultiple ? value : [value]
+            if (!values.length || values.some(id => typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id))) {
+                throw badRequest(`${field} must be ${field === 'subCategoryId' ? 'a valid ObjectId or a non-empty array of ObjectIds' : 'a valid ObjectId'}`)
             }
             // Aggregation does not cast IDs as find() does.
-            this.productMatch[field] = new Types.ObjectId(value)
+            const ids = values.map(id => new Types.ObjectId(id))
+            // Repeated query keys select products from any of these subcategories.
+            this.productMatch[field] = isMultiple ? { $in: ids } : ids[0]
             this.hasFilter = true
         }
 

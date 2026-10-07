@@ -4,15 +4,17 @@ import { asyncHandler } from '../../../Utills/errorHandler.js'
 import cloudinary from '../../../Utills/Cloudinary.js'
 import slugify from 'slugify'
 import { nanoid } from 'nanoid'
+import ApiFeatures from '../../../Utills/ApiFeatures.js'
 
 export const getSubCategories = asyncHandler(async (req,res,next)=>{
-    const {categoryId} = req.params
 
-    const subCategory = await subCategoryModel.find({categoryId})
-    if(subCategory.length === 0)
-    {
-        return next(new Error("no sub-category found"))
-    }
+    const {categoryId} = req.params
+    const apiFeature = new ApiFeatures(req.query,subCategoryModel.find({categoryId})).paginate().sort()
+    const subCategory = await apiFeature.mongooseQuery
+    // if(subCategory.length === 0)
+    // {
+    //     return next(new Error("no sub-category found"))
+    // }
 
     return res.json({message:"done",subCategory})
 })
