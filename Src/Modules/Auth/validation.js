@@ -15,7 +15,7 @@ export const signUp = Joi.object({
     email,
     password,
     cPassword,
-    phone: Joi.string().trim().pattern(/^\+?[0-9][0-9 ()-]{5,18}[0-9]$/)
+    phone: Joi.string().trim().pattern(/^\+?[0-9][0-9 ()-]{5,18}[0-9]$/).length(11)
 }).required()
 
 // Login accepts existing passwords without imposing the new-password policy.

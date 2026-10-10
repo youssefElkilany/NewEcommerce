@@ -26,20 +26,23 @@ const requiredVariantImages = variantImages.keys({
 export const getProducts = Joi.object({
     page: Joi.number().integer().min(1).max(1000000),
     size: Joi.number().integer().min(1).max(100),
+    count: Joi.boolean(),
     search: Joi.string().trim().min(1).max(100),
     brandId: id,
+    categoryId: id,
     subCategoryId: Joi.alternatives().try(id, Joi.array().items(id.required()).min(1)),
     minPrice:variantFields.price,
     maxPrice:variantFields.price,
     discount: variantFields.discount,
     rating: Joi.number().min(0).max(5),
-    sort: Joi.string().pattern(/^-?(?:name|createdAt|ratings\.average)(?:,-?(?:name|createdAt|ratings\.average))*$/),
+    sort: Joi.string().pattern(/^-?(?:name|createdAt|ratings\.average|discount|finalPrice)(?:,-?(?:name|createdAt|ratings\.average|discount|finalPrice))*$/),
     fields: Joi.string().pattern(/^(?:_id|name|description|slug|brandId|subCategoryId|variants|ratings|createdAt|updatedAt)(?:,(?:_id|name|description|slug|brandId|subCategoryId|variants|ratings|createdAt|updatedAt))*$/)
 }).required()
 
 export const addProduct = Joi.object({
     name: name.required(),
     description: Joi.string().trim().min(1).required(),
+    categoryId: id.required(),
     subCategoryId: id.required(),
     brandId: id.required(),
     specifications,

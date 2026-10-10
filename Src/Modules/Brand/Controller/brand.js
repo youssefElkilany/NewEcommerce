@@ -99,3 +99,7 @@ export const deleteBrand = asyncHandler(async(req,res,next)=>{
     return res.json({message:"brand is deleted successfully"})
 
 })
+export const getBrands = asyncHandler(async (req, res) => {
+    const brands = await brandModel.find().select('name image slug').sort({ name: 1, _id: 1 }).lean()
+    return res.json({ brands })
+})

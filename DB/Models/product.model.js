@@ -102,7 +102,11 @@ const productSchema = new Schema({
       default:false
     },
     cloudId:String,
-
+     categoryId:{
+        type:Types.ObjectId,
+        ref:'Category',
+        required:true
+    },
     subCategoryId:{
         type:Types.ObjectId,
         ref:'Subcategory',
@@ -126,6 +130,9 @@ const productSchema = new Schema({
     timestamps:true
 })
 
+
+productSchema.index({ categoryId: 1, isDeleted: 1 })
+productSchema.index({ brandId: 1, isDeleted: 1 })
 
 const productModel =  mongoose.models.Product || model('Product',productSchema)
 export default productModel

@@ -32,14 +32,21 @@ export const getProducts = asyncHandler(async(req,res,next)=>{
     try {
         apiFeatures = new AggregationApiFeatures(req.query, productModel.aggregate())
             .filter().search().sort().paginate().select()
+            
     } catch (error) {
         return next(error)
     }
+    const wantsCount = req.query.count === 'true' || req.query.count === true
+    if (wantsCount && (apiFeatures.hasFilter || Object.keys(apiFeatures.searchMatch).length)) {
+        const [result] = await productModel.aggregate(apiFeatures.catalogPipeline)
+        const totalItems = result?.totals?.[0]?.totalItems || 0
+        const page = Number(req.query.page) || 1
+        const size = Math.min(Number(req.query.size) || 3, 100)
+        return res.status(200).json({ products: result?.products || [],
+            pagination: { page, size, totalItems, hasMore: page * size < totalItems } })
+    }
     const products = await apiFeatures.mongooseQuery
-   
-    return res.status(200).json({
-        products
-    })
+    return res.status(200).json({ products })
 })
 
 
@@ -67,16 +74,17 @@ export const getProductVariant = asyncHandler(async(req,res,next)=>{
 })
 // name , description , slug , mainImage , price , finalPrice , stock , subCategoryId , brandId
 // remains createdBy , variants , sku
+// check subImage promises
 export const addProduct = asyncHandler(async(req,res,next)=>{
     
-    const {subCategoryId , brandId , name , description , 
+    const {categoryId,subCategoryId , brandId , name , description , 
         price} = req.body
 
         
         
     const data = {}
     const variants = {}
-    const subCategory = await subCategoryModel.findById(subCategoryId)
+    const subCategory = await subCategoryModel.findOne({ _id: subCategoryId , categoryId })
     if(!subCategory)
     {
         return next(new Error("sub category not found"))
@@ -119,7 +127,7 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
                 ) : []
      ])
 
-    data.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
+    variants.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
     if(subImages.length > 0)
     {
         variants.subImages = subImages.map(images =>{
@@ -160,6 +168,7 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
     data.cloudId = cloudId
     data.brandId = brandId
     data.subCategoryId = subCategoryId
+    data.categoryId = categoryId
     data.variants = variants
     data.createdBy = req.user.id
     data.brandName = brand.name

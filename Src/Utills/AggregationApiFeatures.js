@@ -2,7 +2,7 @@ import { Types } from 'mongoose'
 
 const publicFields = new Set([
     '_id', 'name', 'description', 'slug', 'specifications', 'brandId',
-    'subCategoryId', 'variants', 'ratings', 'createdAt', 'updatedAt'
+    'subCategoryId', 'categoryId', 'variants', 'ratings', 'createdAt', 'updatedAt'
 ])
 const sortFields = new Set([
     '_id', 'name', 'createdAt', 'updatedAt', 'ratings.average',
@@ -41,7 +41,7 @@ export default class AggregationApiFeatures {
         this.hasFilter = false
         // An allowlist prevents excluded fields and MongoDB operators from
         // overriding isDeleted, isActive, or stock. Options are deferred.
-        for (const field of ['brandId', 'subCategoryId']) {
+        for (const field of ['brandId', 'subCategoryId', 'categoryId']) {
             const value = this.queryData[field]
             if (value === undefined) continue
             const isMultiple = field === 'subCategoryId' && Array.isArray(value)
@@ -172,6 +172,19 @@ export default class AggregationApiFeatures {
         if (this.pagination) pipeline.push(...this.pagination)
         // if (this.projection) pipeline.push({ $project: this.projection })
         return pipeline
+    }
+
+    get catalogPipeline() {
+        // Count matching available variants before pagination, only when requested.
+        const stages = this.pipeline
+        const sortIndex = stages.findIndex(stage => stage.$sort)
+        return [
+            ...stages.slice(0, sortIndex),
+            { $facet: {
+                products: stages.slice(sortIndex),
+                totals: [{ $count: 'totalItems' }]
+            } }
+        ]
     }
 
     get mongooseQuery() {
