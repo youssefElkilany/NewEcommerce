@@ -26,7 +26,11 @@ export const addToCart = asyncHandler(async(req,res,next)=>{
     if(!cart)
     {
       await cartModel.create({createdBy:req.user.id})
-         return next(new Error("cart not found"))
+      cart.products.push({productId ,variantId , quantity})
+      return res.status(200).json({
+        message: 'Product added to cart successfully',
+        cart
+      });
     }
 
     const currentCart = cart.products.find(product =>{

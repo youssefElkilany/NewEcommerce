@@ -6,10 +6,11 @@ import {
     validateCreateAddress,
     validateUpdateAddress
 } from './validation.js'
+import { roles } from '../../Middelware/validation.js'
 
 const router = Router()
 
-router.use(Auth())
+router.use(Auth([roles.User]))
 
 router.route('/')
     .post(validateCreateAddress,addressController.createAddress)

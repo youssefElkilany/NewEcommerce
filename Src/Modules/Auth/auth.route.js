@@ -5,7 +5,8 @@ import * as schemas from './validation.js'
 const router = Router()
 
 
-router.post('/signup',validationn(schemas.signUp, ['body']),regController.signUp)
+router.post('/signup',validationn(schemas.signUp, ['body']),regController.userSignUp)
+router.post('/seller/signup',validationn(schemas.signUp, ['body']),regController.sellerSignUp)
 router.post('/login',validationn(schemas.login, ['body']),regController.login)
 router.get('/emailConfirmation/:token',validationn(schemas.confirmEmail, ['params']),regController.confirmEmail)
 router.get("/newconfirmationemail/:token",validationn(schemas.ResendEmail, ['params']),regController.ResendEmail)

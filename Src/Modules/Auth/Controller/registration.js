@@ -11,11 +11,7 @@ import { nanoid , customAlphabet } from "nanoid";
 import cartModel from "../../../../DB/Models/cart.model.js";
 
 
-
-export const signUp = asyncHandler(async (req,res,next)=>{
-
-    const {email , name , password , cPassword , phone } = req.body
-
+async function signUp(email , name , password , cPassword , phone , role){
 
     if(password !== cPassword)
     {
@@ -27,20 +23,11 @@ export const signUp = asyncHandler(async (req,res,next)=>{
     {
         return next(new Error("email already exist"))
     }
-
-    
-
-
-
-
     const hashedPassword = hash({plainText:password})
     
-
-    const user = await userModel.create({email,password:hashedPassword,userName:name,phoneNo:phone}).catch((err)=>{
+    const user = await userModel.create({email,password:hashedPassword,userName:name,phoneNo:phone , role}).catch((err)=>{
        return next(new Error(err))
     })
-
-    const cart = await cartModel.create({createdBy:user._id})
 
     const emailtoken =  generateToken({payload:{email}})
     const token2 = generateToken({payload:{email},expiresIn:process.env.refreshExpireTime}) // for resend email
@@ -52,6 +39,25 @@ export const signUp = asyncHandler(async (req,res,next)=>{
                 <a href = "${req.protocol}://${req.headers.host}/auth/newconfirmationemail/${token2}">Reconfirmation Email </a>`
 
     await sendEmail({to:email,subject:"email Confirmation",html})
+    return user
+}
+
+export const userSignUp = asyncHandler(async (req,res,next)=>{
+
+    const {email , name , password , cPassword , phone } = req.body
+
+   const user = await signUp(email , name , password , cPassword , phone , 'User' , req , next)
+    
+
+    return res.status(201).json({message:"sign up successfully" , user })
+})
+
+export const sellerSignUp = asyncHandler(async (req,res,next)=>{
+
+    const {email , name , password , cPassword , phone } = req.body
+
+    const user = await signUp(email , name , password , cPassword , phone , 'Seller' , req , next)
+    
 
     return res.status(201).json({message:"sign up successfully" , user })
 })
@@ -168,7 +174,7 @@ export const forgetPasswordLink = asyncHandler(async(req,res,next)=>{
     const emailtoken =  generateToken({payload:{email}})
 
 
-    const html = `<a href = "${req.protocol}://${req.headers.host}/auth/resetpass/${emailtoken}">reset password </a>`
+    const html = `<a href = "${req.protocol}://${req.headers.host}/auth/resetlink/${emailtoken}">reset password </a>`
 
     await sendEmail({to:email,subject:"reset password",html})
 

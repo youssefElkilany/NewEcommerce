@@ -194,7 +194,7 @@ const shippingAddress = {}
     data.products = productArr
     data.note = req.body.note ?? undefined
     data.paymentMethod = req.body.paymentMethod ?? 'Cash'
-    data.status = req.body.paymentMethod ? 'pendingPayment' :'placed'
+    data.status = req.body.paymentMethod == 'Card' ? 'pendingPayment' :'placed'
 
     const order = await orderModel.create(data)
 

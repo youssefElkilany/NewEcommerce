@@ -6,14 +6,17 @@ A modular REST API for an e-commerce platform, built with Node.js, Express, and 
 
 ## Features
 
-- User registration, email confirmation, login, and password recovery
-- JWT-based authentication
+- Separate customer and seller registration routes (shared signup refactor in progress), email confirmation, login, and password recovery
+- JWT-based authentication and role checks for seller management and customer orders
 - Category, subcategory, and brand management
 - Products with multiple variants, options, stock, discounts, and images
+- Public product catalog with search, filtering, sorting, pagination, and optional result counts
+- Public brand listing and related-brand lookup by subcategory
 - Cloudinary image storage
 - Shopping cart management
 - Percentage and fixed-value coupons
 - Order creation from a cart or a supplied product list
+- Stripe Checkout sessions for card payments and an order webhook (integration in progress)
 - Verified-purchase product reviews and aggregate ratings
 - User-owned delivery addresses with default-address handling
 - Request validation with Joi
@@ -28,6 +31,7 @@ A modular REST API for an e-commerce platform, built with Node.js, Express, and 
 - **Validation:** Joi
 - **File uploads:** Multer and Cloudinary
 - **Email:** Nodemailer with Gmail
+- **Payments:** Stripe Checkout
 - **Testing:** `node:test` and `node:assert`
 
 ## Project structure
@@ -69,43 +73,6 @@ A modular REST API for an e-commerce platform, built with Node.js, Express, and 
 - A Cloudinary account for image uploads
 - A Gmail account with an app password for email delivery
 
-### Installation
-
-1. Clone the repository and enter its directory:
-
-   ```bash
-   git clone <your-repository-url>
-   cd Ecommerce
-   ```
-
-2. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-3. Copy `.env.example` to `config/.env` and replace the placeholder values.
-
-   On macOS or Linux:
-
-   ```bash
-   cp .env.example config/.env
-   ```
-
-   On Windows PowerShell:
-
-   ```powershell
-   Copy-Item .env.example config/.env
-   ```
-
-4. Start the API:
-
-   ```bash
-   node index.js
-   ```
-
-The server runs at `http://localhost:3000`.
-
 ## Environment variables
 
 | Variable | Purpose |
@@ -114,6 +81,7 @@ The server runs at `http://localhost:3000`.
 | `SALT_ROUND` | bcrypt hashing rounds |
 | `TOKEN_SIGNATURE` | Secret used to sign and verify JWTs |
 | `expireTime` | JWT lifetime passed to `jsonwebtoken`, in seconds |
+| `refreshExpireTime` | Resend-confirmation token lifetime in seconds; falls back to `expireTime` when unset |
 | `BEARER_KEY` | Authorization prefix, usually `Bearer ` including the space |
 | `MOOD` | Application environment label |
 | `App` | Cloudinary folder name used by category and subcategory uploads |
@@ -123,53 +91,14 @@ The server runs at `http://localhost:3000`.
 | `cloud_name` | Cloudinary cloud name |
 | `api_key` | Cloudinary API key |
 | `api_secret` | Cloudinary API secret |
+| `PORT` | Local HTTP port; defaults to `3000` |
+| `STRIPE_SECRET_KEY` | Stripe API secret for card checkout and webhook handling |
+| `STRIPE_SUCCESS_URL` | Redirect URL after successful Stripe Checkout |
+| `STRIPE_CANCEL_URL` | Checkout cancellation redirect URL; the controller appends `orderId` |
+| `endpointSecret` | Stripe webhook signing secret; required for signature verification and event parsing in the current handler |
+
 
 Never commit `config/.env`. It is already excluded by `.gitignore`.
-
-## Deploy to Vercel
-
-The root `vercel.json` selects Vercel's native Express framework. `index.js`
-exports the app for Vercel and starts a local server when running `npm start`.
-See [Vercel's Express documentation](https://vercel.com/docs/frameworks/backend/express).
-
-1. Push the project to your Git provider and import the repository into Vercel.
-2. Use the repository root as **Root Directory**, **Express** as the framework,
-   and **Node.js 24.x**. Keep the default build and output settings; this API
-   does not need a frontend build or an output directory.
-3. Add the variables from `.env.example` in Vercel's **Environment Variables**
-   settings for Production and any Preview deployments you intend to use.
-   Replace every placeholder with your actual value. Set `DB_ATLAS` to your
-   MongoDB Atlas connection string, `MOOD` to `production`, and `NODE_ENV` to
-   `production`. Variable names are case-sensitive: both `App` and `APP` are
-   currently used. Preserve the trailing space in `BEARER_KEY` (`Bearer `),
-   without including the surrounding quotes in the dashboard value.
-4. Ensure your Atlas database user can access the database and Atlas network
-   access permits connections from your Vercel deployment.
-5. Click **Deploy**. Redeploy after changing environment variables.
-
-Local secrets in `config/.env` are excluded from CLI uploads by `.vercelignore`;
-configure them in Vercel instead. `PORT` is only needed for local development.
-
-To deploy through the CLI after configuring the project and environment variables:
-
-```bash
-npx vercel
-npx vercel --prod
-```
-
-Existing API paths stay the same, for example
-
-```bash
-curl -i https://your-project.vercel.app/address
-```
-
-Without an authorization header, this should return the API's `invalid bearer key`
-error. Then test login with an existing account to verify database connectivity.
-
-Uploads use temporary disk storage before transfer to Cloudinary. Files on the
-function's disk are not persistent. Vercel Functions limit request bodies to
-4.5 MB, including multipart overhead; larger uploads need a direct-to-Cloudinary
-upload flow. See [Vercel Function limits](https://vercel.com/docs/functions/limitations).
 
 ## Authentication
 
@@ -195,7 +124,9 @@ curl -X POST http://localhost:3000/auth/signup \
   }'
 ```
 
-After registration, the user must follow the confirmation link sent by email before logging in.
+For seller registration, send the same body to `POST /auth/seller/signup`. The routes assign `User` and `Seller` respectively; do not supply a role in the request body.
+
+The intended flow creates an account, then emails a confirmation link that must be followed before login.
 
 ### Example login
 
@@ -210,65 +141,86 @@ curl -X POST http://localhost:3000/auth/login \
 
 ## API reference
 
-Routes marked **Protected** require the `Authorization` header. File-upload routes use `multipart/form-data`; other request bodies use JSON.
+Routes marked **Seller**, **User**, or **Blocked** require the `Authorization` header. **Blocked** indicates that an empty role allowlist currently prevents access. File-upload routes use `multipart/form-data`; other request bodies use JSON.
 
 ### Authentication
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/auth/signup` | Public | Register a user and send confirmation links |
+| `POST` | `/auth/signup` | Public | Register a customer (`User`); shared helper currently incomplete |
+| `POST` | `/auth/seller/signup` | Public | Register a seller (`Seller`); shared helper currently incomplete |
 | `POST` | `/auth/login` | Public | Log in a confirmed user and return a JWT |
 | `GET` | `/auth/emailConfirmation/:token` | Public | Confirm an email address |
 | `GET` | `/auth/newconfirmationemail/:token` | Public | Send another confirmation email |
-| `PATCH` | `/auth/passcode` | Protected | Send a password-reset OTP |
+| `PATCH` | `/auth/passcode` | Public | Send a password-reset OTP |
 | `PATCH` | `/auth/resetcode` | Public | Reset a password using an OTP |
 | `PATCH` | `/auth/forgetlink` | Public | Send a password-reset link |
-| `PATCH` | `/auth/resetlink` | Public | Reset a password using a link; see current limitations |
+| `PATCH` | `/auth/resetlink/:token` | Public | Reset a password using a token; emailed URL still needs alignment |
 
 ### Categories and subcategories
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
 | `GET` | `/category` | Public | List categories with their subcategories |
-| `POST` | `/category` | See note below | Create a category with an `image` file |
-| `PATCH` | `/category/:categoryId` | See note below | Update a category and optionally replace its image |
+| `POST` | `/category` | Seller | Create a category with an `image` file |
+| `PATCH` | `/category/:categoryId` | Seller | Update a category and optionally replace its image |
 | `GET` | `/category/:categoryId/subcategory` | Public | List subcategories in a category |
-| `POST` | `/category/:categoryId/subcategory` | Protected | Create a subcategory with an `image` file |
-| `PATCH` | `/category/:categoryId/subcategory/:subCategoryId` | Protected | Update a subcategory |
-
-The category write controllers use the authenticated user, but their routes do not currently install the authentication middleware. Add authentication before using these endpoints.
+| `POST` | `/category/:categoryId/subcategory` | Seller | Create a subcategory with an `image` file |
+| `PATCH` | `/category/:categoryId/subcategory/:subCategoryId` | Seller | Update a subcategory |
 
 ### Brands
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/brand` | Protected | Create a brand with an `image` file |
-| `PATCH` | `/brand/:brandId` | Protected | Update a brand and optionally replace its image |
+| `GET` | `/brand` | Public | List brand names, images, and slugs alphabetically |
+| `POST` | `/brand` | Seller | Create a brand with an `image` file |
+| `PATCH` | `/brand/:brandId` | Seller | Update a brand and optionally replace its image |
 
 ### Products and variants
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/product` | Protected | Create a product and its first variant |
-| `PUT` | `/product/:productId` | Protected | Update product-level information |
-| `POST` | `/product/:productId/variant` | Protected | Add a variant to a product |
+| `GET` | `/product` | Public | Browse, search, and filter available product variants |
+| `POST` | `/product` | Seller | Create a product and its first variant |
+| `PUT` | `/product/:productId` | Seller | Update product-level information |
+| `POST` | `/product/:productId/variant` | Seller | Add a variant to a product |
 | `GET` | `/product/:productId/variant/:variantId` | Public | Get one product variant |
-| `PATCH` | `/product/:productId/variant/:variantId` | Protected | Update a variant |
-| `DELETE` | `/product/:productId/variant/:variantId` | Protected | Delete a variant |
+| `PATCH` | `/product/:productId/variant/:variantId` | Seller | Update a variant |
+| `DELETE` | `/product/:productId/variant/:variantId` | Seller | Delete a variant |
+| `GET` | `/product/:subCategoryId/brand` | Public | Get distinct brand names associated with a subcategory |
 
 Product creation uses `multipart/form-data` with the following fields:
 
-- Required text fields: `name`, `description`, `price`, `subCategoryId`, and `brandId`
+- Required text fields: `name`, `description`, `price`, `categoryId`, `subCategoryId`, and `brandId`
 - Required file field: `mainImage` (one file)
 - Optional file field: `subImages` (up to four files)
 - Optional fields: `stock`, `discount`, `options`, and `specifications`
 - `options` and `specifications` must be JSON-encoded strings when sent as form fields
 
+#### Product catalog queries
+
+```bash
+curl "http://localhost:3000/product?search=shirt&minPrice=100&maxPrice=500&sort=finalPrice&page=1&size=12&count=true"
+```
+
+| Parameter | Behavior |
+| --- | --- |
+| `search` | Case-insensitive literal search in product name and description |
+| `brandId`, `categoryId`, `subCategoryId` | Filter by ObjectId; repeat `subCategoryId` to match any of several subcategories |
+| `minPrice`, `maxPrice` | Inclusive bounds on variant `finalPrice` |
+| `discount`, `rating` | Exact matches for variant discount (0–100) and average product rating (0–5) |
+| `sort` | Comma-separated `name`, `createdAt`, `ratings.average`, `discount`, or `finalPrice`; prefix with `-` for descending |
+| `page`, `size` | Defaults: page `1`, size `3`; maximum size `100` |
+| `count` | With `true` and a search or filter, adds `pagination` containing `page`, `size`, `totalItems`, and `hasMore` |
+| `fields` | Accepted and validated, but projection is currently disabled in the aggregation pipeline |
+
+The catalog excludes deleted products and unavailable variants (inactive or out of stock). Browsing or searching without filters returns the highest-discount available variant per product, choosing the first on ties. Adding any supported filter returns one product entry per matching variant, with a one-element `variants` array. Pagination and counts apply to those entries. Without a search or filter, `count=true` still returns only `{ products }`.
+
 ### Cart
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/cart` | Protected | Add a product variant to the current user's cart |
+| `POST` | `/cart` | Blocked | Add a product variant to the current user's cart |
 
 Example body:
 
@@ -284,9 +236,9 @@ Example body:
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/coupon` | Protected | Create a coupon |
-| `PUT` | `/coupon/:couponId` | Protected | Update a coupon |
-| `DELETE` | `/coupon/:couponId` | Protected | Delete a coupon owned by the current user |
+| `POST` | `/coupon` | Blocked | Create a coupon |
+| `PUT` | `/coupon/:couponId` | Blocked | Update a coupon |
+| `DELETE` | `/coupon/:couponId` | Blocked | Delete a coupon owned by the current user |
 
 Example coupon body:
 
@@ -312,7 +264,8 @@ For a fixed discount, set `discountType` to `fixed` and omit `maxDiscountAmount`
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/order` | Protected | Create an order from supplied products or the current cart |
+| `POST` | `/order` | User | Create an order from supplied products or the current cart |
+| `POST` | `/order/webhook` | Stripe signature | Receive Stripe events using a raw JSON body and `endpointSecret` |
 
 Example body with explicit products:
 
@@ -334,11 +287,15 @@ Example body with explicit products:
 
 Omit `products` to create the order from the authenticated user's cart.
 
+Omit `paymentMethod` for the default cash flow. Setting `paymentMethod` to `Card` creates a Stripe Checkout session in USD and returns `{ message, order, session }`; the client can redirect to `session.url`. Stock and cart changes currently happen before payment confirmation.
+
+The webhook handles `checkout.session.completed` by setting the order to `placed`. Failure/cancellation handling and stock restoration are unfinished. A cancellation controller exists but has no registered route.
+
 ### Reviews
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/product/:productId/review` | Protected | Review a product from a delivered order |
+| `POST` | `/product/:productId/review` | Blocked | Review a product from a delivered order |
 
 ```json
 {
@@ -352,7 +309,7 @@ Each user can review a product once, and the product's average rating is recalcu
 
 ### Addresses
 
-All address routes are protected and scoped to the authenticated user.
+All address routes are scoped to the authenticated user, but currently blocked by `Auth()` with an empty role allowlist.
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
@@ -404,34 +361,7 @@ erDiagram
     ORDER }o--o{ PRODUCT : contains
 ```
 
-## Testing
-
-Run the test suite with:
-
-```bash
-node --test
-```
-
-The current tests cover address ownership/default behavior and coupon validation/controller behavior. The `npm test` script is still a placeholder, so use `node --test` until the package script is updated.
 
 ## Current limitations
 
-- Role-based authorization is defined but not enforced; authenticated users can currently reach management endpoints.
-- Category write routes need authentication middleware.
-- A general product-list route is not currently registered.
-- The password-reset-link route does not currently expose the token parameter expected by its controller.
-- Checkout, coupon calculations, and several update flows are still being refined.
-- Payment processing is not implemented; orders default to cash.
-- The automated suite currently includes failing coupon-controller tests and should be fixed before CI is enabled.
-- Additional request validation, rate limiting, security headers, logging cleanup, and integration tests are recommended before deployment.
-
-## Contributing
-
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature/my-feature`.
-3. Commit your changes.
-4. Push the branch and open a pull request.
-
-## License
-
-This project is configured with the ISC license in `package.json`.
+- Additional request validation, rate limiting, security headers, logging cleanup, and integration tests.
