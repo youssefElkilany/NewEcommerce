@@ -1,89 +1,44 @@
-
-// signup , login , confirmEmail , forgetPass , 
-
 import { compare } from "bcryptjs";
 import userModel from "../../../../DB/Models/user.model.js";
 import sendEmail from "../../../Utills/emailSender.js";
 import { asyncHandler } from "../../../Utills/errorHandler.js";
 import { hash } from "../../../Utills/hashing.js";
 import { generateToken, verifyToken } from "../../../Utills/token.js";
-import { nanoid , customAlphabet } from "nanoid";
-import cartModel from "../../../../DB/Models/cart.model.js";
+import { customAlphabet } from "nanoid";
 
-
-async function signUp(email , name , password , cPassword , phone , role){
-
-    if(password !== cPassword)
-    {
-        return next(new Error("password mismatch"))
-    }
-
-    const checkUser = await userModel.findOne({email:email.toLowerCase()})
-    if(checkUser)
-    {
-        return next(new Error("email already exist"))
-    }
-    const hashedPassword = hash({plainText:password})
-    
-    const user = await userModel.create({email,password:hashedPassword,userName:name,phoneNo:phone , role}).catch((err)=>{
-       return next(new Error(err))
-    })
-
-    const emailtoken =  generateToken({payload:{email}})
-    const token2 = generateToken({payload:{email},expiresIn:process.env.refreshExpireTime}) // for resend email
-
-    //body of email
- const html = `<a href = "${req.protocol}://${req.headers.host}/auth/emailConfirmation/${emailtoken}">EmailConfirmation </a>
-                <br>
-                <br>
-                <a href = "${req.protocol}://${req.headers.host}/auth/newconfirmationemail/${token2}">Reconfirmation Email </a>`
-
-    await sendEmail({to:email,subject:"email Confirmation",html})
-    return user
+async function signUp(req, next, { email, name, password, cPassword, phone }, role) {
+    if (password !== cPassword) return next(new Error("password mismatch", { cause: 400 }));
+    const normalizedEmail = email.toLowerCase();
+    if (await userModel.findOne({ email: normalizedEmail })) return next(new Error("email already exist", { cause: 409 }));
+    const user = await userModel.create({ email: normalizedEmail, password: hash({ plainText: password }), userName: name, phoneNo: phone, role });
+    const emailtoken = generateToken({ payload: { email: normalizedEmail } });
+    const token2 = generateToken({ payload: { email: normalizedEmail }, expiresIn: process.env.refreshExpireTime });
+    const html = `<a href="${req.protocol}://${req.headers.host}/auth/emailConfirmation/${emailtoken}">Confirm your email</a><br><a href="${req.protocol}://${req.headers.host}/auth/newconfirmationemail/${token2}">Resend confirmation email</a>`;
+    await sendEmail({ to: normalizedEmail, subject: "Email confirmation", html });
+    return user;
 }
 
-export const userSignUp = asyncHandler(async (req,res,next)=>{
+export const userSignUp = asyncHandler(async (req, res, next) => {
+    const user = await signUp(req, next, req.body, 'User');
+    if (!user) return;
+    return res.status(201).json({ message: "sign up successfully", user: { id: user._id, email: user.email, role: user.role } });
+});
 
-    const {email , name , password , cPassword , phone } = req.body
-
-   const user = await signUp(email , name , password , cPassword , phone , 'User' , req , next)
-    
-
-    return res.status(201).json({message:"sign up successfully" , user })
-})
-
-export const sellerSignUp = asyncHandler(async (req,res,next)=>{
-
-    const {email , name , password , cPassword , phone } = req.body
-
-    const user = await signUp(email , name , password , cPassword , phone , 'Seller' , req , next)
-    
-
-    return res.status(201).json({message:"sign up successfully" , user })
-})
-
+export const sellerSignUp = asyncHandler(async (req, res, next) => {
+    const user = await signUp(req, next, req.body, 'Seller');
+    if (!user) return;
+    return res.status(201).json({ message: "sign up successfully", user: { id: user._id, email: user.email, role: user.role } });
+});
 
 export const login = asyncHandler(async (req,res,next)=>{
-
-    const {email , password} = req.body
-
-    const user = await userModel.findOne({email,confirmEmail:true})
-    if(!user)
-    {
-        return next(new Error("email not found"))
-    }
-    const flag = await compare(password, user.password)
-    if(!flag)
-    {
-        return next(new Error("wrong password"))
-    }
-
-    const token = generateToken({payload:{id:user._id, email}})
-    
-
-    return res.status(200).json({message:"login successfully" , token})
-})
-
+    const {email , password} = req.body;
+    const user = await userModel.findOne({email: email.toLowerCase(),confirmEmail:true});
+    if(!user) return next(new Error("email not found"));
+    const flag = await compare(password, user.password);
+    if(!flag) return next(new Error("wrong password"));
+    const token = generateToken({payload:{id:user._id, email: user.email}});
+    return res.status(200).json({message:"login successfully", token, role: user.role});
+});
 
 export const confirmEmail = asyncHandler(async(req,res,next)=>{
 

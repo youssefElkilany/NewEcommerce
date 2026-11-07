@@ -68,7 +68,6 @@
         }
        
          this.mongooseQuery.find({variants:{$elemMatch:variantsFilter}}).select({
-    name: 1,
     description: 1,
     // Include any other product fields you want returned.
     variants: {
@@ -160,7 +159,7 @@
         const literalSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         this.mongooseQuery.find({
             $or:[
-                {name:{$regex:literalSearch,$options:'i'}},
+                {'variants.name':{$regex:literalSearch,$options:'i'}},
                 {description:{$regex:literalSearch,$options:'i'}}
             ]}
         )

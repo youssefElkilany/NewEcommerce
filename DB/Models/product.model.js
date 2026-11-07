@@ -2,10 +2,6 @@ import mongoose, { Schema , Types, model } from "mongoose";
 
 
 const productSchema = new Schema({
-    name:{
-        type:String,
-        required:true
-    },
     description:{
         type:String,
         required:true
@@ -35,6 +31,11 @@ const productSchema = new Schema({
     ],
      variants: [
       { // sku , options , price , discount , stock , mainImage , subImages
+        name: {
+          type: String,
+          required: true,
+          trim: true
+        },
         sku: {
          type: String,
          required: true,
@@ -73,6 +74,8 @@ const productSchema = new Schema({
 
          mainImage:{
         type:Object,
+        required:true
+
     },
          subImages:[{
         type:Object

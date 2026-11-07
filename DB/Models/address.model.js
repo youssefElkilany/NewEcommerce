@@ -1,3 +1,4 @@
+import { egyptGovernorates } from '../../Src/Modules/Address/egypt.js'
 import mongoose, { Schema , Types, model } from "mongoose"
 
 const addressSchema = new Schema({
@@ -17,8 +18,10 @@ const addressSchema = new Schema({
     },
     country:{
         type:String,
+       enum:['Egypt'],
        default:'Egypt',
     },
+    governorate:{ type:String, enum:egyptGovernorates },
     city:{
         type:String,
         required:true
@@ -43,16 +46,18 @@ const addressSchema = new Schema({
       trim: true,
       maxlength: 300
     },
-     location: {
-      type: {
-        type: String,
-        enum: ["Point"],
-          default: "Point"
-      },
-
-      coordinates: {
-        type: [Number] // [longitude, latitude]
-      }
+    location: {
+      type: new Schema({
+        type: { type:String, enum:['Point'], default:'Point' },
+        coordinates: {
+          type:[Number], required:true,
+          validate: {
+            validator: value => Array.isArray(value) && value.length === 2 && value[0] >= -180 && value[0] <= 180 && value[1] >= -90 && value[1] <= 90,
+            message:'Location must contain a valid longitude and latitude'
+          }
+        }
+      }, { _id:false }),
+      default:undefined
     },
     isDefault:{
         type:Boolean,

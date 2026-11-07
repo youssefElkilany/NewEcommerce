@@ -71,8 +71,7 @@ const couponSchema = new Schema(
 
     maxDiscountAmount: {
       type: Number,
-      min: 0,
-      default: null
+      min: 0
     },
 
     minOrderAmount: {

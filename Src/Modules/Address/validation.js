@@ -1,4 +1,5 @@
 import Joi from 'joi'
+import { egyptGovernorates, normalizeEgyptPhone } from './egypt.js'
 import { id } from '../../Utills/validationSchemas.js'
 
 const locationSchema = Joi.object({
@@ -14,8 +15,9 @@ const optionalText = Joi.string().trim().allow('')
 const addressShape = {
     label:Joi.string().valid('home','work','other'),
     name:Joi.string().trim().min(1),
-    phone:Joi.string().trim().min(1),
-    country:Joi.string().trim().min(1),
+    phone:Joi.string().trim().custom(normalizeEgyptPhone),
+    country:Joi.string().trim().valid('Egypt'),
+    governorate:Joi.string().trim().valid(...egyptGovernorates),
     city:Joi.string().trim().min(1),
     street:Joi.string().trim().min(1),
     buildingNumber:optionalText,
@@ -32,6 +34,8 @@ const createAddressSchema = Joi.object({
     ...addressShape,
     name:addressShape.name.required(),
     phone:addressShape.phone.required(),
+    country:addressShape.country.default('Egypt'),
+    governorate:addressShape.governorate.required(),
     city:addressShape.city.required(),
     street:addressShape.street.required()
 }).required()

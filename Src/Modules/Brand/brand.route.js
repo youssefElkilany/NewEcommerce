@@ -9,7 +9,7 @@ const router = Router()
 
 router.route('/')
     .get(brandController.getBrands)
-    .post(Auth([roles.Seller]), fileUpload().single('image'), validationn(schemas.addBrand), brandController.addBrand)
-    router.patch('/:brandId',Auth([roles.Seller]), fileUpload().single('image'), validationn(schemas.updateBrand), brandController.updateBrand)
+    .post(Auth([roles.Admin,roles.Seller]), fileUpload().single('image'), validationn(schemas.addBrand), brandController.addBrand)
+    router.patch('/:brandId',Auth([roles.Admin,roles.Seller]), fileUpload().single('image'), validationn(schemas.updateBrand), brandController.updateBrand)
 
 export default router

@@ -42,3 +42,21 @@ export const validateCreateCoupon = (req, res, next) => {
   req.body = value;
   return next();
 };
+
+const couponFields = Object.keys(createCouponSchema.describe().keys);
+const updateCouponSchema = Joi.object(Object.fromEntries(couponFields.map(key => [key, Joi.any()]))).min(1).required();
+export const validateUpdateCoupon = (req,res,next) => {
+  const {error,value} = updateCouponSchema.validate(req.body,{abortEarly:false});
+  if(error) return res.status(400).json({message:'Validation Error',validationErr:error.details});
+  req.body=value; return next();
+};
+export const validateCouponId = (req,res,next) => {
+  const {error} = id.required().validate(req.params.couponId);
+  if(error) return res.status(400).json({message:'Validation Error',validationErr:error.details});
+  return next();
+};
+export const validateCouponList = (req,res,next) => {
+  const {error} = Joi.object({page:Joi.number().integer().min(1),size:Joi.number().integer().min(1).max(100)}).validate(req.query);
+  if(error) return res.status(400).json({message:'Validation Error',validationErr:error.details});
+  return next();
+};

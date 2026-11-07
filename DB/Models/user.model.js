@@ -32,10 +32,18 @@ const userSchema = new Schema({
         min:[15,"minimum age is 15"],
         max:[90,"Maximum age is 90"]
     },
-    // whishList:[{
-    //     productId:Types.ObjectId,
-    //     ref:'Product'
-    // }],
+    whishList:[{
+        productId:{
+            type:Types.ObjectId,
+            ref:'Product',
+            required:true,
+        },
+        variantId:{
+            type:Types.ObjectId,
+            required:true
+        },
+        _id:false
+    }],
 
     phoneNo:{
         type:String,

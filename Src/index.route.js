@@ -45,7 +45,7 @@ const Bootstrap = (app,express)=>{
   // )
 
     app.use((req,res,next)=>{
-      if(req.originalUrl == '/order/webhook')
+      if(['/order/webhook', '/order/checkout/webhook', '/order/checkout2/webhook'].includes(req.path.replace(/\/$/, '')))
       { // don't convert it from buffer let it as it is
         next()
       }

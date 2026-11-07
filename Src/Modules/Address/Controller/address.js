@@ -6,6 +6,7 @@ const addressFields = [
     'name',
     'phone',
     'country',
+    'governorate',
     'city',
     'street',
     'buildingNumber',

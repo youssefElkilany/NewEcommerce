@@ -13,8 +13,8 @@ router.route('/')
 // .post(fileUpload('category').fields([{name:"image",maxCount:1},{name:'CV',maxCount:1}]),
 // categoryController.addCategory)
 .get(validationn(schemas.getCategory),categoryController.getCategory)
-.post(Auth([roles.Seller]),fileUpload().single('image'),validationn(schemas.addCategory),categoryController.addCategory)
-router.patch('/:categoryId',Auth([roles.Seller]),fileUpload().single('image'),validationn(schemas.updateCategory),categoryController.updateCategory)
+.post(Auth([roles.Admin,roles.Seller]),fileUpload().single('image'),validationn(schemas.addCategory),categoryController.addCategory)
+router.patch('/:categoryId',Auth([roles.Admin,roles.Seller]),fileUpload().single('image'),validationn(schemas.updateCategory),categoryController.updateCategory)
 
 // .delete(categoryController.deleteCategory)
 

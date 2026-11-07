@@ -1,3 +1,4 @@
+import { resolveVariantImages, releaseUnreferencedImages } from '../variant-images.js'
 import subCategoryModel from '../../../../DB/Models/subCategory.model.js'
 import brandModel from '../../../../DB/Models/brand.model.js'
 import { asyncHandler } from '../../../Utills/errorHandler.js'
@@ -6,6 +7,7 @@ import cloudinary from '../../../Utills/Cloudinary.js'
 import { nanoid , customAlphabet } from 'nanoid'
 import slugify from 'slugify'
 import AggregationApiFeatures from '../../../Utills/AggregationApiFeatures.js'
+import { isDeepStrictEqual } from 'node:util'
 
 const generateSku = customAlphabet(
   'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -17,7 +19,6 @@ export const getrelatedBrands = asyncHandler(async(req,res,next)=>{
     const {subCategoryId} = req.params
 
     const brands = await productModel.distinct('brandName', {subCategoryId:subCategoryId})
-    console.log({brands})
     return res.status(200).json({
         message:"related brands retrieved successfully",
         brands
@@ -51,25 +52,69 @@ export const getProducts = asyncHandler(async(req,res,next)=>{
 
 
 export const getProductVariant = asyncHandler(async(req,res,next)=>{
-    const {productId , variantId} = req.params
+    const {productId, variantId} = req.params
 
-    // Return only the variant matched by variants._id, not the full array.
+    // Load siblings for the size selector; lean returns options as plain objects.
     const product = await productModel.findOne({
         _id:productId,
-        'variants._id':variantId
-    }).select('variants.$').lean()
-    
-
+        'variants._id':variantId,
+        isDeleted:false
+    }).select('variants description specifications brandName ratings categoryId subCategoryId brandId slug').lean()
     if(!product)
     {
         return next(new Error('Product or variant not found', {cause:404}))
     }
 
+    const variant = product.variants.find(item => String(item._id).toLowerCase() === variantId.toLowerCase())
+    if(!variant)
+    {
+        return next(new Error('Variant not found', {cause:404}))
+    }
+    const toOptions = options => options instanceof Map
+        ? Object.fromEntries(options)
+        : Object.fromEntries(Object.entries(options || {}))
+    const selectedVariantOptions = toOptions(variant.options)
+    const {size: selectedSize, ...selectedOptions} = selectedVariantOptions
+    const availableSizes = []
+
+    if(typeof selectedSize === 'string' && selectedSize.trim())
+    {
+        for(const item of product.variants)
+        {
+            const {size, ...otherOptions} = toOptions(item.options)
+            const isActive = item.isActive === true || item.isActive === undefined
+
+            if(!isActive || !(item.stock > 0)) continue
+            if(typeof size !== 'string' || !size.trim()) continue
+            // Compare color, material, etc. after removing size from both objects.
+            if(!isDeepStrictEqual(selectedOptions, otherOptions)) continue
+
+            availableSizes.push({size, variantId:item._id})
+        }
+    }
+
     return res.status(200).json({
         message:'Variant retrieved successfully',
         productId:product._id,
-        variant:product.variants[0],
-        // product
+        description:product.description,
+        specifications:product.specifications || [],
+        brandName:product.brandName,
+        ratings:product.ratings,
+        categoryId:product.categoryId,
+        subCategoryId:product.subCategoryId,
+        brandId:product.brandId,
+        slug:product.slug,
+        variant: {...variant, options:selectedVariantOptions},
+        availableSizes,
+        availableVariants: product.variants
+            // Keep sold-out variants in the option catalog so their color/size
+            // values remain visible; the UI can still indicate stock state.
+            .filter(item => item.isActive === true || item.isActive === undefined)
+            .map(item => ({
+                variantId: item._id,
+                options: toOptions(item.options),
+                stock: item.stock || 0
+            }))
     })
 })
 // name , description , slug , mainImage , price , finalPrice , stock , subCategoryId , brandId
@@ -105,7 +150,7 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
         variants.options = JSON.parse(req.body.options)
     }
 
-    if(req.body.stock)
+    if(req.body.stock !== undefined)
     {
         variants.stock = Number(req.body.stock)
     }
@@ -117,15 +162,16 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
 
     // faster in upload but need clean up if upload failed in any of the images
      const cloudId = nanoid()
-     const [mainImage , subImages] = await Promise.all([
-        cloudinary.uploader.upload
-    (req.files.mainImage[0].path , {folder:`${process.env.APP}/product/${cloudId}`}),
-    req.files.subImages !== undefined ? req.files.subImages.map(image =>
-                    cloudinary.uploader.upload(image.path, {
-                        folder: `${process.env.APP}/product/${cloudId}/subImages`
-                    })
-                ) : []
-     ])
+    const [mainImage, subImages] = await Promise.all([
+        cloudinary.uploader.upload(req.files.mainImage[0].path, {
+            folder: `${process.env.APP}/product/${cloudId}`
+        }),
+        Promise.all((req.files.subImages || []).map(image =>
+            cloudinary.uploader.upload(image.path, {
+                folder: `${process.env.APP}/product/${cloudId}/subImages`
+            })
+        ))
+    ])
 
     variants.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
     if(subImages.length > 0)
@@ -164,7 +210,7 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
     variants.price = Number(price)
     variants.finalPrice = Number.parseFloat(price - (((req.body.discount || 0 ) / 100) * price)).toFixed(2)
     data.description = description
-    data.name = name
+    variants.name = name.trim()
     data.cloudId = cloudId
     data.brandId = brandId
     data.subCategoryId = subCategoryId
@@ -182,8 +228,8 @@ export const addProduct = asyncHandler(async(req,res,next)=>{
 // variants =>  price - finalPrice - discount - stock - sku - mainImage - subImage - options
 export const addVariants = asyncHandler(async(req,res,next)=>{
     const {productId} = req.params
-    const {price} = req.body
-    const variants = {}
+    const {name, price} = req.body
+    const variants = {name: name.trim()}
 
     const product = await productModel.findOne({_id:productId, createdBy:req.user.id})
     if(!product)
@@ -191,7 +237,7 @@ export const addVariants = asyncHandler(async(req,res,next)=>{
         return next(new Error("product not found"))
     }
 
-     if(req.body.stock)
+     if(req.body.stock !== undefined)
     {
         variants.stock = Number(req.body.stock)
     }
@@ -203,29 +249,11 @@ export const addVariants = asyncHandler(async(req,res,next)=>{
     {// no requirement only must be string
         variants.options = JSON.parse(req.body.options)
     }
-
-    //  const {secure_url , public_id} = await cloudinary.uploader.upload
-    // (mainImage[0].path , {folder:`${process.env.APP}/product/${product.cloudId}`})
-
-
-   // faster in upload but need clean up if upload failed in any of the images
-     const cloudId = nanoid()
-     const [mainImage , subImages] = await Promise.all([
-        cloudinary.uploader.upload
-    (req.files.mainImage[0].path , {folder:`${process.env.APP}/product/${cloudId}`}),
-    req.files.subImages !== undefined ? req.files.subImages.map(image =>
-                    cloudinary.uploader.upload(image.path, {
-                        folder: `${process.env.APP}/product/${cloudId}/subImages`
-                    })
-                ) : []
-     ])
-     variants.mainImage = {secure_url:mainImage.secure_url , public_id:mainImage.public_id}
-
-    if(subImages.length > 0)
-    {
-        variants.subImages = subImages.map(images =>{
-            return {secure_url:images.secure_url , public_id:images.public_id}
-        })
+    try {
+        Object.assign(variants, await resolveVariantImages(product, req.body, req.files));
+    } catch(error) {
+        if(error.cause === 400 || error.cause === 404) return next(error);
+        throw error;
     }
 
    // variants.mainImage = {secure_url , public_id}
@@ -245,7 +273,7 @@ export const addVariants = asyncHandler(async(req,res,next)=>{
 export const updateVariant = asyncHandler(async(req,res,next)=>{
     const {productId , variantId} = req.params
     // const {} = req.body
-     const {mainImage , subImages} = req.files
+
     const variants = {}
      const hasPrice = req.body.price !== undefined
      const hasdiscount = req.body.discount !== undefined
@@ -265,6 +293,11 @@ export const updateVariant = asyncHandler(async(req,res,next)=>{
     const variantObj = product.variants.find(variant => String(variant._id) === (variantId))
 
     
+
+    if(req.body.name !== undefined)
+    {
+        variants['variants.$.name'] = req.body.name.trim()
+    }
 
     if(hasPrice || hasdiscount)
     {
@@ -286,7 +319,7 @@ export const updateVariant = asyncHandler(async(req,res,next)=>{
 
     // 3ayzeen ngeeb el7aga elgowa variants
 
-     if(req.body.stock)
+     if(req.body.stock !== undefined)
     {
         variants['variants.$.stock'] = Number(req.body.stock)
     }
@@ -313,17 +346,14 @@ export const updateVariant = asyncHandler(async(req,res,next)=>{
         variants['variants.$.options'] = JSON.parse(req.body.options)
     } // frontend hygeeb lel user data eladeema mn database wel user y3dl aw add new option
 
-    if(mainImage) // ngrb .length mara tanya 
-    {
-         const {secure_url , public_id} = await cloudinary.uploader.upload
-    (mainImage[0].path , {folder:`${process.env.APP}/product/${product.cloudId}`})
-    await cloudinary.uploader.destroy(variantObj.mainImage.public_id)
-    variants['variants.$.mainImage'] = {secure_url , public_id}
+    let images;
+    try {
+        images = await resolveVariantImages(product, req.body, req.files, variantObj);
+    } catch(error) {
+        if(error.cause === 400 || error.cause === 404) return next(error);
+        throw error;
     }
-    if(subImages)
-    { // nb2a nzbt feeha 3adad images max 5 -> only add images
-
-    }
+    for(const [key,value] of Object.entries(images)) variants['variants.$.'+key] = value;
 
     const updateProduct = await productModel.findOneAndUpdate(
         {_id:productId, 'variants._id':variantId, createdBy:req.user.id},
@@ -331,6 +361,9 @@ export const updateVariant = asyncHandler(async(req,res,next)=>{
         {returnDocument:'after'}
     )
 
+    if(!updateProduct) return next(new Error("variant not found", {cause:404}))
+        
+    await releaseUnreferencedImages(variantObj, updateProduct)
     return res.json({message:"variant updated successfully",updateProduct})
 })
 
@@ -351,55 +384,69 @@ export const deleteVariant = asyncHandler(async(req,res,next)=>{
 })
 
 
-// name , slug , description , specification
+// Product-level description, brand, subcategory and specifications.
 export const updateProduct = asyncHandler(async(req,res,next)=>{
     const {productId} = req.params
-
     const product = await productModel.findOne({_id:productId, createdBy:req.user.id})
-     if(!product)
-    {
-        return next(new Error("variant not found"))
-    }
+    if(!product) return next(new Error('product not found', {cause:404}))
     const data = {}
-    if(req.body.subCategoryId)
-    {
-        const subcat = await productModel.findById(req.body.subCategoryId)
-         if(!subcat)
-            {
-                return next(new Error("subCategory not found"))
-            }
+    if(req.body.subCategoryId) {
+        const subcategory = await subCategoryModel.findById(req.body.subCategoryId)
+        if(!subcategory) return next(new Error('subCategory not found', {cause:404}))
+        data.subCategoryId = subcategory._id
+        data.categoryId = subcategory.categoryId
     }
-    if(req.body.brandId)
-    {
-        const brand = await productModel.findById(req.body.brandId)
-         if(!brand)
-            {
-                return next(new Error("brand not found"))
-            }
+    if(req.body.brandId) {
+        const brand = await brandModel.findById(req.body.brandId)
+        if(!brand) return next(new Error('brand not found', {cause:404}))
+        data.brandId = brand._id
+        data.brandName = brand.name
     }
-
-    if(req.body.name)
-    {
-        data.name = req.body.name
-    }
-    if(req.body.description)
-    {
-        data.description = req.body.description
-    }
-    if(req.body.specification)
-    {
-        data.specification = req.body.specification
-    }
-    // not tested yet
-    const updateProduct = await productModel.updateOne(
-        {_id:productId, createdBy:req.user.id},
-        {data}
+    if(req.body.description !== undefined) data.description = req.body.description
+    if(req.body.specification !== undefined) data.specifications = JSON.parse(req.body.specification)
+    const updatedProduct = await productModel.findOneAndUpdate(
+        {_id:productId, createdBy:req.user.id}, {$set:data}, {returnDocument:'after', runValidators:true}
     )
-    if(!updateProduct.modifiedCount)
-    {
-        return next(new Error("nothing is updated"))
-    }
-
-    return res.json({message:"updated successfully"})
-
+    return res.json({message:'updated successfully', product:updatedProduct})
 })
+
+export const getSellerProducts = asyncHandler(async(req,res)=>{
+    const page = Number(req.query.page) || 1
+    const size = Number(req.query.size) || 50
+    const filter = {createdBy:req.user.id, isDeleted:false}
+    const results = await productModel.find(filter).sort({createdAt:-1}).skip((page-1)*size).limit(size+1).lean()
+    return res.json({products:results.slice(0,size), pagination:{page,size,hasMore:results.length>size}})
+})
+
+// const selectedOptions = variant.options || {}
+//     const optionKeys = Object.keys(selectedOptions).filter(key => key !== 'size')
+//     const availableSizes = typeof selectedOptions.size === 'string' && selectedOptions.size.trim()
+//         ? product.variants.filter(item => {
+//             const options = item.options || {}
+//             const otherKeys = Object.keys(options).filter(key => key !== 'size')
+//             return (item.isActive === true || item.isActive === undefined) && item.stock > 0 &&
+//                 typeof options.size === 'string' && options.size.trim() &&
+//                 otherKeys.length === optionKeys.length &&
+//                 optionKeys.every(key => Object.hasOwn(options, key) && options[key] === selectedOptions[key])
+//         }).map(item => ({size:item.options.size, variantId:item._id}))
+//         : []
+
+
+//  const {size: selectedSize, ...selectedOptions} = variant.options || {}
+    // const availableSizes = []
+
+    // if(typeof selectedSize === 'string' && selectedSize.trim())
+    // {
+    //     for(const item of product.variants)
+    //     {
+    //         const {size, ...otherOptions} = item.options || {}
+    //         const isActive = item.isActive === true || item.isActive === undefined
+
+    //         if(!isActive || !(item.stock > 0)) continue
+    //         if(typeof size !== 'string' || !size.trim()) continue
+    //         // Compare color, material, etc. after removing size from both objects.
+    //         if(!isDeepStrictEqual(selectedOptions, otherOptions)) continue
+
+    //         availableSizes.push({size, variantId:item._id})
+    //     }
+    // }

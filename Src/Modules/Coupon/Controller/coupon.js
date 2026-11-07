@@ -2,6 +2,7 @@ import { asyncHandler } from "../../../Utills/errorHandler.js";
 import couponModel from "../../../../DB/Models/coupon.model.js";
 import productModel from "../../../../DB/Models/product.model.js";
 import categoryModel from "../../../../DB/Models/category.model.js";
+import { createCouponSchema } from "../validation.js";
 
 // applicable products or categories
 export const addCoupon = asyncHandler(async(req,res,next)=>{
@@ -65,128 +66,53 @@ export const addCoupon = asyncHandler(async(req,res,next)=>{
 
 
 export const updateCoupon = asyncHandler(async(req,res,next)=>{
-    const {couponId} = req.params
-    const data = {}
+  const coupon = await couponModel.findOne({_id:req.params.couponId,createdBy:req.user.id});
+  if(!coupon) return next(new Error('coupon not found',{cause:404}));
 
-    const coupon = await couponModel.findById(couponId)
-    if(!coupon)
-    {
-        return next(new Error("coupon not found"))
-    }
-
-    if(req.body.code)
-    {
-        const checkCoupon = await couponModel.findOne({code:req.body.code.toUpperCase()})
-        if(checkCoupon)
-        {
-            return next(new Error("Coupon already exist"))
-        }
-        data.code = req.body.code
-    }
-    if(req.body.usageLimit)
-    {
-        if(coupon.usedBy?.length > req.body.usageLimit)
-        {
-            return next(new Error("coupon already used by users more than limit"))
-        }
-        data.usageLimit = req.body.usageLimit   
-    }
-    if(req.body.usageLimitPerUser)
-    {
-        data.usageLimitPerUser = req.body.usageLimitPerUser
-    }
-    if(req.body.discountType)
-    {
-        data.discountType = req.body.discountType
-    }
-    if(req.body.discountValue)
-    {
-        data.discountValue = req.body.discountValue
-    }
-    if(req.body.expireDate)
-    {
-        data.expireDate = req.body.expireDate
-    }
-    if(req.body.maxDiscountAmount)
-    {
-        data.maxDiscountAmount = req.body.maxDiscountAmount
-    }
-    if(req.body.minOrderAmount)
-    {
-        data.minOrderAmount = req.body.minOrderAmount
-    }
-
-
-     // =========================
-  // Arrays
-  // =========================
-
-
-  const applicableProducts =
-    req.body.applicableProducts !== undefined
-      ? req.body.applicableProducts
-      : coupon.applicableProducts;
-
-  const excludedProducts =
-    req.body.excludedProducts !== undefined
-      ? req.body.excludedProducts
-      : coupon.excludedProducts;
-
-  const applicableCategories =
-    req.body.applicableCategories !== undefined
-      ? req.body.applicableCategories
-      : undefined
-
-  // Check overlap between final applicable/excluded state
-  const excludedSet = new Set(
-    excludedProducts.map(id => id.toString())
-  );
-
-   if(applicableProducts?.some(id => excludedSet?.has(id.toString())))   
-    {
-        return next(new Error('A product cannot be both applicable and excluded', {cause:400}));
-    }
-
-  if(req.body.applicableProducts || req.body.excludedProducts)
-  {
-    const productIds = [...new Set([...applicableProducts , ...excludedProducts])]
-    const productCount = await productModel.countDocuments({_id:{$in:productIds},isDeleted:false})
-
-    if(productCount !== productIds.length)
-    {
-        return next(new Error('One or more products were not found', {cause:404}));
-    }
-
-     if(req.body.applicableProducts)
-        {
-            data.applicableProducts = req.body.applicableProducts
-        }
-        if(req.body.excludedProducts)
-        {
-            data.excludedProducts = req.body.excludedProducts
-        }
-  }
-    
-    const  categoryCount = applicableCategories.length
-            ? await categoryModel.countDocuments({_id:{$in:applicableCategories}})
-            : 0
-    // must check category
-
-   if (req.body.applicableCategories !== undefined) {
-  if (categoryCount !== req.body.applicableCategories.length) {
-    return next(
-      new Error('One or more categories were not found', { cause: 404 })
-    )
+  const keys = Object.keys(createCouponSchema.describe().keys);
+  const current = {};
+  for(const key of keys) if(coupon[key] !== undefined) {
+    current[key] = ['applicableProducts','excludedProducts','applicableCategories'].includes(key)
+      ? coupon[key].map(id => String(id)) : coupon[key];
   }
 
-  data.applicableCategories = req.body.applicableCategories;
-}
+  const merged = {...current,...req.body};
 
-const newCoupon = await couponModel.findOneAndUpdate({_id:couponId,createdBy:req.user.id},{$set:{data}},{returnDocument:'after'})
+  if(merged.discountType === 'fixed') delete merged.maxDiscountAmount;
 
-return res.json({message:"updated successfully",newCoupon})
-})
-// rewrite array , 2 api's for array , push and pull together in same array
+  const {error,value:data} = createCouponSchema.validate(merged,{abortEarly:false});
+  if(error) return res.status(400).json({message:'Validation Error',validationErr:error.details});
+
+  const duplicate = await couponModel.findOne({code:data.code,_id:{$ne:coupon._id}});
+  if(duplicate) return next(new Error('Coupon code already exists',{cause:409}));
+
+  if(data.usageLimit !== null && data.usageLimit < (coupon.usedBy?.length || 0))
+    return next(new Error('Usage limit is lower than the number of existing uses',{cause:400}));
+
+  if(data.applicableProducts.some(id => data.excludedProducts.includes(id)))
+    return next(new Error('A product cannot be both applicable and excluded',{cause:400}));
+
+  const productIds = [...new Set([...data.applicableProducts,...data.excludedProducts])];
+  const [products,categories] = await Promise.all([
+    productIds.length ? productModel.countDocuments({_id:{$in:productIds},isDeleted:false}) : 0,
+    data.applicableCategories.length ? categoryModel.countDocuments({_id:{$in:data.applicableCategories}}) : 0
+  ]);
+
+  if(products !== productIds.length || categories !== data.applicableCategories.length)
+    return next(new Error('One or more products or categories were not found',{cause:404}));
+
+  const update = {$set:data};
+  if(data.discountType === 'fixed') update.$unset = {maxDiscountAmount:1};
+  const newCoupon = await couponModel.findOneAndUpdate({_id:coupon._id,createdBy:req.user.id},update,{returnDocument:'after',runValidators:true});
+  return res.json({message:'updated successfully',newCoupon});
+});
+
+export const getSellerCoupons = asyncHandler(async(req,res)=>{
+  const page=Number(req.query.page)||1, size=Number(req.query.size)||50;
+  const results = await couponModel.find({createdBy:req.user.id}).sort({createdAt:-1}).skip((page-1)*size).limit(size+1).lean();
+  const coupons = results.slice(0,size).map(({usedBy,...coupon})=>({...coupon,usedCount:usedBy?.length||0}));
+  return res.json({coupons,pagination:{page,size,hasMore:results.length>size}});
+});
 
 export const deleteCoupon = asyncHandler(async(req,res,next)=>{
     const {couponId} = req.params

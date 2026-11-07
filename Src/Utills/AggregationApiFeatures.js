@@ -1,14 +1,14 @@
 import { Types } from 'mongoose'
 
 const publicFields = new Set([
-    '_id', 'name', 'description', 'slug', 'specifications', 'brandId',
+    '_id', 'variants.name', 'description', 'slug', 'specifications', 'brandId',
     'subCategoryId', 'categoryId', 'variants', 'ratings', 'createdAt', 'updatedAt'
 ])
 const sortFields = new Set([
-    '_id', 'name', 'createdAt', 'updatedAt', 'ratings.average',
+    '_id', 'variants.name', 'createdAt', 'updatedAt', 'ratings.average',
     'variants.finalPrice', 'variants.discount', 'variants.stock'
 ])
-const aliases = { finalPrice: 'variants.finalPrice', discount: 'variants.discount', rating: 'ratings.average' }
+const aliases = { name: 'variants.name', finalPrice: 'variants.finalPrice', discount: 'variants.discount', rating: 'ratings.average' }
 
 const badRequest = message => new Error(message, { cause: 400 })
 
@@ -32,6 +32,7 @@ export default class AggregationApiFeatures {
         this.variantMatch = []
         this.hasFilter = false
         this.searchMatch = {}
+        this.searchVariantMatch = []
         this.sortStage = { createdAt: -1, _id: -1 }
     }
 
@@ -80,12 +81,17 @@ export default class AggregationApiFeatures {
 
     search() {
         this.searchMatch = {}
+        this.searchVariantMatch = []
         const search = this.queryData.search
         if (typeof search === 'string' && search.trim()) {
             const literal = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            this.searchMatch.$or = ['name', 'description'].map(field => ({
+            this.searchMatch.$or = ['variants.name', 'description'].map(field => ({
                 [field]: { $regex: literal, $options: 'i' }
             }))
+            // Return variants matching the search, not unrelated siblings.
+            this.searchVariantMatch = [{ $or: ['$$variant.name', '$description'].map(field => ({
+                $regexMatch: { input: { $ifNull: [field, ''] }, regex: literal, options: 'i' }
+            })) }]
         }
         return this
     }
@@ -131,6 +137,7 @@ export default class AggregationApiFeatures {
         }
         const modes = new Set(Object.entries(projection).filter(([key]) => key !== '_id').map(([, value]) => value))
         if (modes.size > 1) throw badRequest('Cannot mix included and excluded fields (except _id)')
+        if (Object.hasOwn(projection, 'variants')) delete projection['variants.name']
         this.projection = projection
         return this
     }
@@ -148,7 +155,8 @@ export default class AggregationApiFeatures {
                         { $eq: [{ $type: '$$variant.isActive' }, 'missing'] }
                     ] },
                     { $gt: ['$$variant.stock', 0] },
-                    ...this.variantMatch
+                    ...this.variantMatch,
+                    ...this.searchVariantMatch
                 ] }
             } } } },
             { $match: { 'variants.0': { $exists: true } } }
@@ -170,7 +178,7 @@ export default class AggregationApiFeatures {
         }
         pipeline.push({ $sort: { ...this.sortStage, 'variants._id': 1 } })
         if (this.pagination) pipeline.push(...this.pagination)
-        // if (this.projection) pipeline.push({ $project: this.projection })
+        if (this.projection) pipeline.push({ $project: this.projection })
         return pipeline
     }
 

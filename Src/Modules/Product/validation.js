@@ -8,6 +8,7 @@ const specifications = jsonString(Joi.array().items(Joi.object({
 })).required())
 
 const variantFields = {
+    name,
     price: Joi.number().min(0),
     discount: Joi.number().min(0).max(100),
     stock: Joi.number().integer().min(0),
@@ -18,9 +19,21 @@ const variantImages = Joi.object({
     mainImage: Joi.array().items(imageFile).length(1),
     subImages: Joi.array().items(imageFile).min(1).max(4)
 }).min(1)
+const imageSelections = {
+    mainImagePublicId: Joi.string().min(1),
+    subImagesPublicIds: jsonString(Joi.array().items(Joi.string().min(1)).unique().max(4))
+}
+const checkVariantImages = (creating) => (value,helpers) => {
+    const main = value.file?.mainImage?.length || 0
+    if(value.mainImagePublicId !== undefined && main) return helpers.message('Choose an existing main image or upload one, not both')
+    if(creating && !main && !value.mainImagePublicId) return helpers.message('A main image is required')
+    const selected = value.subImagesPublicIds === undefined ? [] : JSON.parse(value.subImagesPublicIds)
+    if(selected.length + (value.file?.subImages?.length || 0) > 4) return helpers.message('A variant can have at most four additional images')
+    return value
+}
 
 const requiredVariantImages = variantImages.keys({
-    mainImage: Joi.array().items(imageFile).length(1).required()
+     mainImage: Joi.array().items(imageFile).length(1).required()
 }).required()
 
 export const getProducts = Joi.object({
@@ -36,24 +49,23 @@ export const getProducts = Joi.object({
     discount: variantFields.discount,
     rating: Joi.number().min(0).max(5),
     sort: Joi.string().pattern(/^-?(?:name|createdAt|ratings\.average|discount|finalPrice)(?:,-?(?:name|createdAt|ratings\.average|discount|finalPrice))*$/),
-    fields: Joi.string().pattern(/^(?:_id|name|description|slug|brandId|subCategoryId|variants|ratings|createdAt|updatedAt)(?:,(?:_id|name|description|slug|brandId|subCategoryId|variants|ratings|createdAt|updatedAt))*$/)
+    fields: Joi.string().pattern(/^(?:_id|variants\.name|description|slug|brandId|subCategoryId|variants|ratings|createdAt|updatedAt)(?:,(?:_id|variants\.name|description|slug|brandId|subCategoryId|variants|ratings|createdAt|updatedAt))*$/)
 }).required()
 
 export const addProduct = Joi.object({
-    name: name.required(),
     description: Joi.string().trim().min(1).required(),
     categoryId: id.required(),
     subCategoryId: id.required(),
     brandId: id.required(),
     specifications,
     ...variantFields,
+    name: name.required(),
     price: variantFields.price.required(),
     file: requiredVariantImages
 }).required()
 
 export const updateProduct = Joi.object({
     productId: id.required(),
-    name,
     description: Joi.string().trim().min(1),
     subCategoryId: id,
     brandId: id,
@@ -63,14 +75,16 @@ export const updateProduct = Joi.object({
         image: Joi.array().items(imageFile).length(1),
         subImages: Joi.array().items(imageFile).min(1).max(4)
     })
-}).or('name', 'description', 'subCategoryId', 'brandId', 'specification').required()
+}).or('description', 'subCategoryId', 'brandId', 'specification').required()
 
 export const addVariants = Joi.object({
     productId: id.required(),
     ...variantFields,
+    name: name.required(),
     price: variantFields.price.required(),
-    file: requiredVariantImages
-}).required()
+    ...imageSelections,
+    file: variantImages.empty(Joi.object().length(0))
+}).custom(checkVariantImages(true)).required()
 
 export const getProductVariant = Joi.object({
     productId: id.required(),
@@ -81,8 +95,11 @@ export const updateVariant = Joi.object({
     productId: id.required(),
     variantId: id.required(),
     ...variantFields,
+    ...imageSelections,
     // An empty Multer files object does not count as an update.
     file: variantImages.empty(Joi.object().length(0))
-}).or('price', 'discount', 'stock', 'options', 'file').required()
+}).or('name', 'price', 'discount', 'stock', 'options', 'file', 'mainImagePublicId', 'subImagesPublicIds').custom(checkVariantImages(false)).required()
 
 export const deleteVariant = getProductVariant
+
+export const sellerProducts = Joi.object({page:Joi.number().integer().min(1),size:Joi.number().integer().min(1).max(100)}).required()

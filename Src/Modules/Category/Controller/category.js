@@ -63,7 +63,7 @@ export const updateCategory = asyncHandler(async(req,res,next)=>{
         data.normalizedName = req.body.name.toLowerCase()
     }
 
-    if(req.file?.image)
+    if(req.file)
     {
        
         const {secure_url , public_id} = await cloudinary.uploader.upload(req.file.path,{folder:`${process.env.App}/category`})
