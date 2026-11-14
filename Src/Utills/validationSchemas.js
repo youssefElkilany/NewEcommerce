@@ -35,6 +35,11 @@ export const imageFile = Joi.object({
         fieldname: Joi.string().required()
 })
 
+export function normalizeEgyptPhone(value, helpers) {
+  const phone = value.replace(/[\s()-]/g, '').replace(/^\+20/, '0').replace(/^0020/, '0');
+  return /^01[0125][0-9]{8}$/.test(phone) ? phone : helpers.message('Enter a valid Egyptian mobile number');
+}
+
 // Controllers JSON.parse these multipart fields, so keep the validated string.
 export const jsonString = (schema) => Joi.string().custom((value, helpers) => {
     try {

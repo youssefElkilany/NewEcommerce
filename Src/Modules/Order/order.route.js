@@ -1,10 +1,12 @@
 import { Router } from 'express'
+import * as orderController from './Controller/order.js'
 import Auth from '../../Middelware/auth.js'
 import express from 'express'
 import { roles, validationn } from '../../Middelware/validation.js'
 import * as schemas from './validation.js'
 import * as checkout2 from './Controller/checkout2.js'
 const router = Router()
+router.get('/mine',Auth([roles.User]),validationn(schemas.myOrders,['query']),orderController.getMyOrders)
 
 // router.post('/',Auth([roles.User]),validationn(schemas.createOrder),orderController.createOrder)
 //router.post('/webhook', express.raw({type: 'application/json'}), orderController.webhook)

@@ -1,6 +1,6 @@
 import Joi from 'joi'
-import { egyptGovernorates, normalizeEgyptPhone } from './egypt.js'
-import { id } from '../../Utills/validationSchemas.js'
+import { egyptGovernorates} from './egypt.js'
+import { id, normalizeEgyptPhone } from '../../Utills/validationSchemas.js'
 
 const locationSchema = Joi.object({
     type:Joi.string().valid('Point').default('Point'),

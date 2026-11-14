@@ -9,6 +9,9 @@ import orderModel from "../../../../DB/Models/order.model.js";
 import addressModel from "../../../../DB/Models/address.model.js";
 import payment from "../../../Utills/Payment.js";
 import Stripe from "stripe";
+import Order from '../../../../DB/Models/order.model.js';
+import CheckoutPayment from '../../../../DB/Models/checkoutPayment.model.js';
+import Review from '../../../../DB/Models/review.model.js';
 // check coupon -> 
 // 1- code 
 // 2- expireDate 
@@ -19,6 +22,27 @@ import Stripe from "stripe";
 // 7- update coupon usedBy -> add user to array
 
 // check products first then check minAmountOrder for price
+
+export const getMyOrders=asyncHandler(async(req,res)=>{
+    const page=Number(req.query.page)||1,size=Number(req.query.size)||10;
+    const rows=await Order.find({createdBy:req.user.id})
+        .select('products status paymentMethod subTotal finalPrice shippingAddress createdAt')
+        .sort({createdAt:-1,_id:-1}).skip((page-1)*size).limit(size+1).lean();
+    const orders=rows.slice(0,size);
+    const productIds=[...new Set(orders.flatMap(order=>order.products.map(item=>String(item.productId))))];
+    const [reviews,payments]=await Promise.all([
+        productIds.length?Review.find({createdBy:req.user.id,productId:{$in:productIds}})
+            .select('productId orderId rating comment createdAt').lean():[],
+        orders.length?CheckoutPayment.find({userId:req.user.id,orderId:{$in:orders.map(order=>order._id)}})
+            .select('orderId stripeParams.line_items.price_data.currency').lean():[]
+    ]);
+    for(const order of orders){
+        const payment=payments.find(item=>String(item.orderId)===String(order._id));
+        order.currency=payment?.stripeParams?.line_items?.[0]?.price_data?.currency ||
+            (order.paymentMethod==='Cash'||payment?'egp':null);
+    }
+    return res.json({orders,reviews,pagination:{page,size,hasMore:rows.length>size}});
+});
 
 ///////////////////////////////////////////////// OLD CODE --------------------------------------------
 

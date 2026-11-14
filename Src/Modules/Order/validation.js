@@ -46,3 +46,8 @@ export const validateCheckoutWebhook = (req,res,next) => {
         return res.status(400).json({message:'A Stripe signature and nonempty raw request body are required'})
     return next()
 }
+
+export const myOrders = Joi.object({
+    page:Joi.number().integer().min(1).max(1000000),
+    size:Joi.number().integer().min(1).max(50)
+}).required()

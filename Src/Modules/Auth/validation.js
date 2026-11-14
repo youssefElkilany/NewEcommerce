@@ -1,5 +1,5 @@
 import Joi from 'joi'
-import { password } from '../../Utills/validationSchemas.js'
+import { normalizeEgyptPhone, password } from '../../Utills/validationSchemas.js'
 
 const email = Joi.string().trim().lowercase().email().required()
 // Do not trim passwords. bcrypt supports at most 72 UTF-8 bytes.
@@ -15,7 +15,7 @@ export const signUp = Joi.object({
     email,
     password,
     cPassword,
-    phone: Joi.string().trim().pattern(/^\+?[0-9][0-9 ()-]{5,18}[0-9]$/).length(11)
+    phone: Joi.string().trim().allow('').custom(normalizeEgyptPhone)
 }).required()
 
 // Login accepts existing passwords without imposing the new-password policy.

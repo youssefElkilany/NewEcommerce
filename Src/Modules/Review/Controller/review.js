@@ -20,12 +20,6 @@ async function calculateAvgAndUpdateProduct(productId){
     }
 ])
 
-
-
-
-
-
-
 const updateproduct = await productModel.findOneAndUpdate({_id:productId},{
     'ratings.average':stats[0]?.average ?? 0,
     'ratings.count':stats[0]?.count ?? 0
@@ -43,33 +37,33 @@ export const reviewProduct = asyncHandler(async(req,res,next)=>{
     const product = await productModel.findById(productId)
     if(!product)
     {
-        return next(new Error("product not found"))
+        return next(new Error("product not found",{cause:404}))
     }
 
     const order = await orderModel.findOne({_id:orderId,status:'delivered',
         'products.productId':productId,createdBy:req.user.id})
     if(!order)
     {
-        return next(new Error("order not found"))
+        return next(new Error("Reviews require your own delivered order containing this product",{cause:403}))
     }
 
     const review  = await reviewModel.findOne({productId , createdBy:req.user.id})
     if(review)
     {
-       return next(new Error("you already reviewed before"))
+       return next(new Error("you already reviewed before",{cause:409}))
     }
     // add review 
 // update product
 
 
-    const updateReview = await reviewModel.create({orderId , productId , createdBy:req.user.id,rating ,comment})
+    const reviews = await reviewModel.create({orderId , productId , createdBy:req.user.id,rating ,comment})
 
 
     const updatedProduct = await calculateAvgAndUpdateProduct(productId)
 
     
 
-    return res.json({message:"review completed",updatedProduct})
+    return res.json({message:"review completed",review:reviews,updatedProduct})
 })
 
 

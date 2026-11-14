@@ -1,5 +1,5 @@
 ﻿import Joi from 'joi';
-import { normalizeEgyptPhone } from '../Address/egypt.js';
+import { normalizeEgyptPhone} from '../../Utills/validationSchemas.js';
 export const updateProfile = Joi.object({
   name: Joi.string().trim().min(2).max(100),
   phone: Joi.string().trim().allow('').custom(normalizeEgyptPhone)
