@@ -44,6 +44,64 @@ export const getMyOrders=asyncHandler(async(req,res)=>{
     return res.json({orders,reviews,pagination:{page,size,hasMore:rows.length>size}});
 });
 
+const fulfillmentTargets={placed:['onTheWay','delivered'],onTheWay:['delivered']};
+
+export const getManagedOrders=asyncHandler(async(req,res,next)=>{
+    if(!['Admin','Seller'].includes(req.user.role))return next(new Error('Seller or admin account required',{cause:403}));
+    const page=Number(req.query.page)||1,size=Number(req.query.size)||10;
+    const filter={};
+    if(req.user.role==='Seller'){
+        const ids=await productModel.distinct('_id',{createdBy:req.user.id});
+        if(!ids.length)return res.json({orders:[],pagination:{page,size,hasMore:false}});
+        // Whole-order status changes are safe only when every item belongs to this seller.
+        filter['products.productId']={$in:ids};
+        filter.products={$not:{$elemMatch:{productId:{$nin:ids}}}};
+    }
+    if(req.query.status)filter.status=req.query.status;
+    const rows=await Order.find(filter).select('products status paymentMethod subTotal finalPrice shippingAddress phone createdBy createdAt')
+        .sort({createdAt:-1,_id:-1}).skip((page-1)*size).limit(size+1).lean();
+    const orders=rows.slice(0,size);
+    const payments=orders.length?await CheckoutPayment.find({orderId:{$in:orders.map(order=>order._id)}})
+        .select('orderId userId closed stripeParams.line_items.price_data.currency').lean():[];
+    for(const order of orders){
+        const attempt=payments.find(payment=>String(payment.orderId)===String(order._id)&&String(payment.userId)===String(order.createdBy));
+        order.checkoutReady=attempt?.closed===true;
+        order.availableStatuses=order.checkoutReady?(fulfillmentTargets[order.status]||[]):[];
+        order.currency=attempt?.stripeParams?.line_items?.[0]?.price_data?.currency||(order.paymentMethod==='Cash'||attempt?'egp':null);
+    }
+    return res.json({orders,pagination:{page,size,hasMore:rows.length>size}});
+});
+
+// Fulfillment only: payment, cancellation, stock and coupon changes stay in checkout2.
+export const updateOrderStatus=asyncHandler(async(req,res,next)=>{
+    const {orderId}=req.params;
+    const {status}=req.body;
+    if(!['delivered'].includes(status))return next(new Error('Invalid fulfillment status',{cause:400}));
+
+    const order=await Order.findById(orderId);
+    if(!order)return next(new Error('order not found',{cause:404}));
+    
+    if(req.user.role==='Seller'){
+        const ids=[...new Set(order.products.map(item=>String(item.productId)))];
+        const owned=ids.length?await productModel.countDocuments({_id:{$in:ids},createdBy:req.user.id}):0;
+        if(!ids.length||owned!==ids.length)return next(new Error('You can update only orders containing exclusively your own products; mixed-seller orders require an admin',{cause:403}));
+    }
+    if(order.status!==status&&!(fulfillmentTargets[order.status]||[]).includes(status))
+        return next(new Error('Order status cannot move to this fulfillment stage',{cause:409}));
+    const checkoutPayment=await CheckoutPayment.findOne({orderId:order._id,userId:order.createdBy});
+    if(!checkoutPayment||checkoutPayment.closed!==true)
+        return next(new Error('Checkout must be finalized before changing fulfillment status',{cause:409}));
+    // Retrying a successful request must not fail or apply side effects twice.
+    if(order.status===status)return res.json({message:'Order already has this status',order});
+    const updated=await Order.findOneAndUpdate({_id:order._id,status:order.status},{$set:{status}},{returnDocument:'after',runValidators:true});
+    if(!updated){
+        const latest=await Order.findById(orderId);
+        if(latest?.status===status)return res.json({message:'Order already has this status',order:latest});
+        return next(new Error('Order changed while you were updating it; refresh and try again',{cause:409}));
+    }
+    return res.json({message:'order status updated successfully',order:updated});
+});
+
 ///////////////////////////////////////////////// OLD CODE --------------------------------------------
 
 export const createOrder = asyncHandler(async (req, res, next) => {

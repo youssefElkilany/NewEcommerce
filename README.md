@@ -6,7 +6,7 @@ A modular REST API for an e-commerce platform, built with Node.js, Express, and 
 
 ## Features
 
-- Separate customer and seller registration routes (shared signup refactor in progress), email confirmation, login, and password recovery
+- Separate customer and seller registration routes, email confirmation, login, and password recovery
 - JWT-based authentication and role checks for seller management and customer orders
 - Category, subcategory, and brand management
 - Products with multiple variants, options, stock, discounts, and images
@@ -16,7 +16,7 @@ A modular REST API for an e-commerce platform, built with Node.js, Express, and 
 - Shopping cart management
 - Percentage and fixed-value coupons
 - Order creation from a cart or a supplied product list
-- Stripe Checkout sessions for card payments and an order webhook (integration in progress)
+- Idempotent checkout2 orders, Stripe Checkout in EGP, signed webhooks, and payment reconciliation
 - Verified-purchase product reviews and aggregate ratings
 - User-owned delivery addresses with default-address handling
 - Request validation with Joi
@@ -69,9 +69,13 @@ A modular REST API for an e-commerce platform, built with Node.js, Express, and 
 ### Prerequisites
 
 - Node.js 24.x (also used on Vercel)
-- MongoDB, either local or hosted
+- MongoDB Atlas or a local replica set; checkout2 requires transaction support (a standalone MongoDB instance is insufficient)
 - A Cloudinary account for image uploads
 - A Gmail account with an app password for email delivery
+
+From this backend folder, run `npm install`, create `config/.env` from `.env.example`, fill in the values below, and run `npm start`. The API defaults to `http://localhost:3000`. The example file does not include every optional/payment variable listed below.
+
+`npm run dev` uses nodemon, which is not currently declared in package.json; it requires nodemon to be installed separately.
 
 ## Environment variables
 
@@ -93,8 +97,8 @@ A modular REST API for an e-commerce platform, built with Node.js, Express, and 
 | `api_secret` | Cloudinary API secret |
 | `PORT` | Local HTTP port; defaults to `3000` |
 | `STRIPE_SECRET_KEY` | Stripe API secret for card checkout and webhook handling |
-| `STRIPE_SUCCESS_URL` | Redirect URL after successful Stripe Checkout |
-| `STRIPE_CANCEL_URL` | Checkout cancellation redirect URL; the controller appends `orderId` |
+| `STRIPE_SUCCESS_URL` | Frontend success URL; checkout2 appends `orderId` |
+| `STRIPE_CANCEL_URL` | Frontend cancellation URL; checkout2 appends `orderId` |
 | `endpointSecret` | Stripe webhook signing secret; required for signature verification and event parsing in the current handler |
 
 
@@ -119,14 +123,14 @@ curl -X POST http://localhost:3000/auth/signup \
     "name": "Jane Doe",
     "email": "jane@example.com",
     "phone": "01000000000",
-    "password": "strong-password",
-    "cPassword": "strong-password"
+    "password": "Example123!",
+    "cPassword": "Example123!"
   }'
 ```
 
 For seller registration, send the same body to `POST /auth/seller/signup`. The routes assign `User` and `Seller` respectively; do not supply a role in the request body.
 
-The intended flow creates an account, then emails a confirmation link that must be followed before login.
+Registration creates an account, then emails a confirmation link that must be followed before login.
 
 ### Example login
 
@@ -135,27 +139,27 @@ curl -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "jane@example.com",
-    "password": "strong-password"
+    "password": "Example123!"
   }'
 ```
 
 ## API reference
 
-Routes marked **Seller**, **User**, or **Blocked** require the `Authorization` header. **Blocked** indicates that an empty role allowlist currently prevents access. File-upload routes use `multipart/form-data`; other request bodies use JSON.
+Protected routes require the `Authorization` header. `User` means a customer account; seller management routes allow `Seller` and `Admin`. Ownership checks still apply. File-upload routes use `multipart/form-data`; other request bodies use JSON.
 
 ### Authentication
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/auth/signup` | Public | Register a customer (`User`); shared helper currently incomplete |
-| `POST` | `/auth/seller/signup` | Public | Register a seller (`Seller`); shared helper currently incomplete |
+| `POST` | `/auth/signup` | Public | Register a customer (`User`) |
+| `POST` | `/auth/seller/signup` | Public | Register a seller (`Seller`) |
 | `POST` | `/auth/login` | Public | Log in a confirmed user and return a JWT |
 | `GET` | `/auth/emailConfirmation/:token` | Public | Confirm an email address |
 | `GET` | `/auth/newconfirmationemail/:token` | Public | Send another confirmation email |
 | `PATCH` | `/auth/passcode` | Public | Send a password-reset OTP |
 | `PATCH` | `/auth/resetcode` | Public | Reset a password using an OTP |
 | `PATCH` | `/auth/forgetlink` | Public | Send a password-reset link |
-| `PATCH` | `/auth/resetlink/:token` | Public | Reset a password using a token; emailed URL still needs alignment |
+| `PATCH` | `/auth/resetlink/:token` | Public | Reset a password using a token |
 
 ### Categories and subcategories
 
@@ -180,6 +184,7 @@ Routes marked **Seller**, **User**, or **Blocked** require the `Authorization` h
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
+| `GET` | `/product/mine` | Seller | List own products, including unavailable variants |
 | `GET` | `/product` | Public | Browse, search, and filter available product variants |
 | `POST` | `/product` | Seller | Create a product and its first variant |
 | `PUT` | `/product/:productId` | Seller | Update product-level information |
@@ -197,16 +202,11 @@ Product creation uses `multipart/form-data` with the following fields:
 - Optional fields: `stock`, `discount`, `options`, and `specifications`
 - `options` and `specifications` must be JSON-encoded strings when sent as form fields
 
-Names belong to variants: responses contain `variants[].name` and no product-level `name`. The flat `name` form field on `POST /product` names the first variant. `POST /product/:productId/variant` requires its own `name` and `price`; provide either uploaded images or `imageSourceVariantId` to reuse images from the same product. Rename a variant with `PATCH /product/:productId/variant/:variantId` and `{"name":"Shirt Medium"}`. `PUT /product/:productId` no longer accepts `name`. The product slug stays unchanged when variants are renamed. Order line items snapshot the selected variant's name; historical orders retain their original snapshots.
+Names belong to variants: responses contain `variants[].name` and no product-level `name`. The flat `name` form field on `POST /product` names the first variant. `POST /product/:productId/variant` requires its own `name` and `price`; upload images or select individual images from variants of the same product using `mainImagePublicId` and a JSON-encoded `subImagesPublicIds` array. An uploaded main image and `mainImagePublicId` cannot be supplied together. Reused gallery images can be combined with uploads, with at most four additional images in total. Rename a variant with `PATCH /product/:productId/variant/:variantId` and `{"name":"Shirt Medium"}`. `PUT /product/:productId` no longer accepts `name`. The product slug stays unchanged when variants are renamed. Order line items snapshot the selected variant's name; historical orders retain their original snapshots.
 
-Existing databases need a one-time migration before using the updated API. Stop application writes and back up the database, then run:
+For variant updates, omitting image fields retains existing images; new gallery uploads append to retained images. Supplying `subImagesPublicIds` explicitly selects which existing gallery images to retain; use `"[]"` to clear them. The same-product image checks also apply to updates.
 
-```bash
-node --env-file=config/.env scripts/migrate-variant-names.js
-node --env-file=config/.env scripts/migrate-variant-names.js --apply
-```
-
-The first command only checks data. The second preserves existing variant names, fills missing names from the old product name, and removes the outer name. It is safe to rerun and refuses records with no usable name. No migration runs automatically on startup.
+Older data with missing variant names needs a separately reviewed migration; there is no automatic startup migration or migration script included in this checkout.
 
 #### Product catalog queries
 
@@ -231,7 +231,10 @@ The catalog excludes deleted products and unavailable variants (inactive or out 
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/cart` | Blocked | Add a product variant to the current user's cart |
+| `GET` | `/cart` | User | Read the current customer's cart |
+| `POST` | `/cart` | User | Add a quantity to an existing item, or create it |
+| `PATCH` | `/cart` | User | Set an item's absolute quantity |
+| `DELETE` | `/cart/:productId/:variantId` | User | Remove an item |
 
 Example body:
 
@@ -247,9 +250,10 @@ Example body:
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/coupon` | Blocked | Create a coupon |
-| `PUT` | `/coupon/:couponId` | Blocked | Update a coupon |
-| `DELETE` | `/coupon/:couponId` | Blocked | Delete a coupon owned by the current user |
+| `GET` | `/coupon` | Seller | List own coupons |
+| `POST` | `/coupon` | Seller | Create a coupon |
+| `PUT` | `/coupon/:couponId` | Seller | Update a coupon |
+| `DELETE` | `/coupon/:couponId` | Seller | Delete a coupon owned by the current user |
 
 Example coupon body:
 
@@ -262,99 +266,86 @@ Example coupon body:
   "minOrderAmount": 500,
   "expireDate": "2027-12-31T23:59:59.000Z",
   "usageLimit": 100,
-  "usageLimitPerUser": 1,
   "applicableProducts": [],
   "applicableCategories": [],
   "excludedProducts": []
 }
 ```
 
+Checkout enforces one coupon redemption/reservation per customer through `usedBy`; a configurable per-user usage limit is not currently implemented.
+
 For a fixed discount, set `discountType` to `fixed` and omit `maxDiscountAmount`.
 
-### Orders
-
-#### Transactional checkout (separate from the original endpoint)
-
-`POST /order/checkout` adds rollback and card checkout without changing the existing `POST /order` controller. It requires a `User` token, an owned `addressId`, and an `Idempotency-Key` header (8–128 letters, digits, underscores, or hyphens). Other body fields follow the original order schema. Omit `products` to use the cart; omit `paymentMethod` or use `Cash` for cash checkout.
-
-```bash
-curl -X POST http://localhost:3000/order/checkout \
-  -H "Authorization: Bearer <token>" \
-  -H "Idempotency-Key: checkout-unique-001" \
-  -H "Content-Type: application/json" \
-  -d '{"phone":["01000000000"],"addressId":"507f1f77bcf86cd799439013","paymentMethod":"Card"}'
-```
-
-- MongoDB must be a replica set (including Atlas) or a sharded cluster. There is no nontransactional fallback. The database user must be able to create the `CheckoutAttempt` collection and its unique indexes.
-- Order creation, stock reservation, coupon usage, and cash-cart updates share a transaction. A thrown error rolls them all back. Coupons use one redemption/reservation per user, enforce the total usage limit, and require every item to be eligible (product or category), with exclusions taking precedence.
-- Card checkout commits a pending order first, then creates a Stripe session outside the transaction. Redirect to the returned `session.url`. Prices are calculated in USD cents; Stripe displays one order summary item for the exact discounted total. Detailed products remain on the order.
-- Retry with the **same key and body** after a network error. The same order and Stripe idempotency key are reused. Reusing a key with a different body returns `409`. A terminal cancelled order requires a new key for a new purchase.
-- Successful payment changes the order to `placed` and subtracts purchased quantities from the cart. Expiration/cancellation restores stock and releases coupon usage in a transaction. Duplicate notifications cannot apply these effects twice.
-
-For cards, configure `STRIPE_SECRET_KEY`, `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, and **`CHECKOUT_WEBHOOK_SECRET`** (the signing secret for the new webhook destination). Register `POST /order/checkout/webhook` for `checkout.session.completed`, `checkout.session.expired`, and `checkout.session.async_payment_succeeded`. It requires a signed raw body; no JWT is used. This secret is separate from the legacy `endpointSecret`.
-
-During testing, use a dedicated Stripe sandbox/destination and ensure the legacy `/order/webhook` destination does not also receive these new checkout events: the unchanged legacy handler does not distinguish checkout flows. The new handler ignores events without its `checkoutFlow: transactional` metadata.
-
-To recover missed webhook updates or request cancellation, call the authenticated endpoint:
-
-```http
-POST /order/checkout/<orderId>/reconcile
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{"cancel": true}
-```
-
-Use `{}` to synchronize status or retry session creation without cancelling. Cancellation first expires an open Stripe session; only confirmed expiration releases stock. Visiting the cancellation redirect URL alone does not cancel the order. Checkout sessions expire after 23 hours, and signed expiration events release reservations.
-
-Stripe timeouts/server errors leave the outcome uncertain, so stock stays reserved. Retry promptly with the same key or reconcile. If the session ID was never saved and the attempt is over 22 hours old, automatic recreation stops to avoid a duplicate charge after Stripe prunes its idempotency key. An operator must reconcile the order metadata in Stripe; a background reconciliation worker is not included. Definitive invalid-request responses release reservations, while expiry-parameter errors retain them for reconciliation. Do not delete reserved variants before payment/cancellation completes.
-
-Run the isolated checkout tests with:
-
-```bash
-node --test Src/Modules/Order/checkout.test.js Src/Modules/Order/checkout.integration.test.js
-```
-
-The integration test is opt-in via `TEST_CHECKOUT_MONGO_URI`, which must point to a test replica set. It creates and drops only its uniquely named test database and verifies actual rollback and concurrent stock reservations. It never loads `config/.env`.
-
-Implementation references: [Mongoose transactions](https://mongoosejs.com/docs/transactions.html), [Stripe Checkout sessions](https://docs.stripe.com/api/checkout/sessions/create), and [expiring a Stripe session](https://docs.stripe.com/api/checkout/sessions/expire).
-
-#### Original order endpoint
+### Accounts, wishlists, and addresses
 
 | Method | Endpoint | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/order` | User | Create an order from supplied products or the current cart |
-| `POST` | `/order/webhook` | Stripe signature | Receive Stripe events using a raw JSON body and `endpointSecret` |
+| GET / PATCH | `/user/me` | User / Seller / Admin | Read profile; update name and phone |
+| GET / POST / DELETE | `/user/wishlist` | User | Read, add, or remove customer-owned wishlist items |
+| GET / POST | `/address` | User | List or create customer-owned addresses |
+| GET / PATCH / DELETE | `/address/:addressId` | User | Read, update, or remove an owned address |
 
-Example body with explicit products:
+Wishlist mutations use `productId` and `variantId`. Wishlists are saved against the authenticated customer, not against the browser. Profile email is read-only in the storefront.
 
-```json
-{
-  "phone": ["01000000000"],
-  "addressId": "507f1f77bcf86cd799439013",
-  "code": "WELCOME10",
-  "note": "Please call before delivery",
-  "products": [
-    {
-      "productId": "507f1f77bcf86cd799439011",
-      "variantId": "507f1f77bcf86cd799439012",
-      "quantity": 2
-    }
-  ]
-}
+Addresses must be in Egypt. Address phone validation accepts Egyptian mobile numbers and normalizes supported international prefixes to local format (for example, `+201000000000` to `01000000000`). Registration and profile validation also use the shared Egyptian phone normalizer; phone may be omitted at registration. GeoJSON coordinates use `[longitude, latitude]`. The first address becomes the default; selecting another default unsets the previous one.
+
+### Orders and checkout2
+
+Only checkout2 routes are active for creating/paying orders. The older `POST /order` and `/order/checkout` routes are commented out.
+
+| Method | Endpoint | Access | Description |
+| --- | --- | --- | --- |
+| POST | `/order/checkout2` | User | Create or recover an order using an idempotency key |
+| POST | `/order/checkout2/:orderId/payment` | User | Create or recover the owned order's Stripe session |
+| POST | `/order/checkout2/:orderId/reconcile` | User | Synchronize payment status or request unpaid cancellation |
+| POST | `/order/webhook` | Stripe signature | Receive checkout2 events as a raw JSON body |
+| GET | `/order/mine` | User | Paginated customer orders and related reviews |
+| GET | `/order/manage` | Seller / Admin | Paginated orders available for fulfillment |
+| PATCH | `/order/:orderId` | Seller / Admin | Set `onTheWay` or `delivered` |
+
+Create an order with an `Idempotency-Key` header containing 8 to 128 letters, digits, underscores, or hyphens:
+
+```http
+POST /order/checkout2
+Authorization: Bearer <token>
+Idempotency-Key: checkout-unique-001
+Content-Type: application/json
+
+{"addressId":"507f1f77bcf86cd799439013","phone":["01000000000"],"paymentMethod":"Card"}
 ```
 
-Omit `products` to create the order from the authenticated user's cart.
+- `paymentMethod` is required: `Cash` or `Card`. Optional fields include `code`, `note`, and explicit `products` entries with `productId`, `variantId`, and `quantity`. Omit products to use the current customer's cart.
+- Keep the same key and body when retrying after an uncertain response. The same customer/key recovers the original immutable order, even if another body is sent. A new purchase needs a new key.
+- MongoDB transactions reserve stock and coupon usage together with order creation. Cash orders are placed immediately; card orders remain `pendingPayment` until payment is verified.
+- For a card order, POST `{}` to its `/payment` endpoint and redirect to the returned Stripe session URL. New sessions charge **EGP**, matching storefront prices. Existing attempts retain their saved Stripe parameters and currency.
+- Signed payment events or reconciliation finalize the order and update its cart. Confirmed unpaid cancellation/expiration restores stock and releases coupon usage. Duplicate notifications do not repeat these effects.
+- POST `{}` to `/reconcile` to synchronize status. POST `{"cancel":true}` to request cancellation of an unpaid order. Paid orders cannot be refunded through this endpoint. Returning to the cancellation URL alone does not cancel an order.
+- Network failures can leave payment uncertain. Recover the existing attempt rather than blindly creating a second purchase. Attempts with unknown Stripe session creation outcomes stop automatic recreation after 22 hours and need operator reconciliation.
 
-Omit `paymentMethod` for the default cash flow. Setting `paymentMethod` to `Card` creates a Stripe Checkout session in USD and returns `{ message, order, session }`; the client can redirect to `session.url`. Stock and cart changes currently happen before payment confirmation.
+#### Stripe configuration
 
-The webhook handles `checkout.session.completed` by setting the order to `placed`. Failure/cancellation handling and stock restoration are unfinished. A cancellation controller exists but has no registered route.
+Set these variables on the **backend**, using your actual frontend domain for production:
+
+```dotenv
+STRIPE_SECRET_KEY=your-stripe-secret-key
+STRIPE_SUCCESS_URL=http://localhost:3001/checkout/return?result=success
+STRIPE_CANCEL_URL=http://localhost:3001/checkout/return?result=cancel
+endpointSecret=your-stripe-webhook-signing-secret
+```
+
+The signing variable is case-sensitive: `endpointSecret`. Register the backend's HTTPS `/order/webhook` endpoint in Stripe for `checkout.session.completed`, `checkout.session.expired`, and `checkout.session.async_payment_succeeded`. Local testing requires forwarding Stripe events to the local backend. Keep the raw-body middleware for this route; it verifies Stripe's signature instead of requiring a customer JWT.
+
+Both return URLs receive an appended `orderId`. The frontend reconciles with the backend; a success query parameter is not proof of payment. Callback changes affect new attempts; existing attempts keep their saved URLs. Never expose Stripe secrets in frontend environment variables.
+
+Checkout reserves stock before card payment. Unstarted reservations and missed events need operational cleanup/reconciliation; exporting a cleanup helper does not schedule it. No background worker is configured by this README.
+
+#### Fulfillment
+
+A seller can manage orders containing exclusively that seller's products. Mixed-seller orders require an admin until per-seller fulfillment is implemented. Completed checkout is required before fulfillment. Allowed transitions are `placed -> onTheWay`, `placed -> delivered`, and `onTheWay -> delivered`; repeat requests for an already applied target status succeed. Pending, cancelled, and backward transitions are rejected. Updates use an atomic status check, and do not change payment, stock, or coupon usage.
 
 ### Reviews
 
-| Method | Endpoint | Access | Description |
-| --- | --- | --- | --- |
-| `POST` | `/product/:productId/review` | Blocked | Review a product from a delivered order |
+Customer review creation uses `POST /product/:productId/review` with:
 
 ```json
 {
@@ -364,63 +355,15 @@ The webhook handles `checkout.session.completed` by setting the order to `placed
 }
 ```
 
-Each user can review a product once, and the product's average rating is recalculated after creation.
+The order must belong to the customer, include the product, and be delivered. Rating is an integer from 1 to 5 and the trimmed comment is 1 to 2000 characters. Creation checks for an existing review by that customer/product and recalculates the product's average rating. `PUT /review/:reviewId` is also registered for updating a review, with `orderId`, `rating`, and `comment`; the current storefront exposes review creation.
 
-### Addresses
 
-All address routes are scoped to the authenticated user, but currently blocked by `Auth()` with an empty role allowlist.
+## Deployment
 
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `POST` | `/address` | Create an address |
-| `GET` | `/address` | List the current user's addresses |
-| `GET` | `/address/:addressId` | Get one address |
-| `PATCH` | `/address/:addressId` | Update an address |
-| `DELETE` | `/address/:addressId` | Delete an address |
+Deploy the backend and frontend as separate projects. The backend requires Node.js 24.x and the environment variables above, plus a reachable transaction-capable MongoDB database. Keep the frontend's backend URL pointed at this deployed HTTPS API. The current backend enables `cors()` globally; frontend authenticated requests use Next.js server route handlers.
 
-Example body:
-
-```json
-{
-  "label": "home",
-  "name": "Jane Doe",
-  "phone": "01000000000",
-  "country": "Egypt",
-  "city": "Cairo",
-  "street": "Tahrir Street",
-  "buildingNumber": "12",
-  "floor": "3",
-  "apartmentNumber": "8",
-  "deliveryInstructions": "Call on arrival",
-  "location": {
-    "type": "Point",
-    "coordinates": [31.2357, 30.0444]
-  },
-  "isDefault": true
-}
-```
-
-The coordinates follow GeoJSON order: `[longitude, latitude]`. The first address is automatically made the default. Setting another address as default unsets the previous default.
-
-## Data model overview
-
-```mermaid
-erDiagram
-    USER ||--|| CART : owns
-    USER ||--o{ ADDRESS : saves
-    USER ||--o{ ORDER : places
-    USER ||--o{ REVIEW : writes
-    USER ||--o{ COUPON : creates
-    CATEGORY ||--o{ SUBCATEGORY : contains
-    SUBCATEGORY ||--o{ PRODUCT : classifies
-    BRAND ||--o{ PRODUCT : identifies
-    PRODUCT ||--o{ REVIEW : receives
-    ORDER ||--o{ REVIEW : verifies
-    CART }o--o{ PRODUCT : contains
-    ORDER }o--o{ PRODUCT : contains
-```
-
+Never commit `config/.env` or provider secrets. `.vercelignore` excludes local configuration, tests, output, and scripts from deployment. Configure deployed secrets in the host's environment settings. Configure the Stripe webhook against the backend domain and Stripe return URLs against the frontend domain.
 
 ## Current limitations
 
-- Additional request validation, rate limiting, security headers, logging cleanup, and integration tests.
+This project remains under active development. Before production use, review rate limiting, security headers, logging, error handling, dependency advisories, payment cleanup/reconciliation scheduling, and integration coverage. Full mixed-seller fulfillment and a customer refund flow are not implemented. Run `npm audit` against the current dependency tree; older audit counts in documentation are not a security guarantee.

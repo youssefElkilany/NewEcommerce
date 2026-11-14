@@ -6,8 +6,10 @@ import { roles, validationn } from '../../Middelware/validation.js'
 import * as schemas from './validation.js'
 import * as checkout2 from './Controller/checkout2.js'
 const router = Router()
-router.get('/mine',Auth([roles.User]),validationn(schemas.myOrders,['query']),orderController.getMyOrders)
+router.get('/manage',Auth([roles.Seller,roles.Admin]),validationn(schemas.managedOrders,['query']),orderController.getManagedOrders)
 
+router.get('/mine',Auth([roles.User]),validationn(schemas.myOrders,['query']),orderController.getMyOrders)
+router.patch('/:orderId',Auth([roles.Seller,roles.Admin]),validationn(schemas.updateOrderStatus,['body','params']),orderController.updateOrderStatus)
 // router.post('/',Auth([roles.User]),validationn(schemas.createOrder),orderController.createOrder)
 //router.post('/webhook', express.raw({type: 'application/json'}), orderController.webhook)
 // router.post('/checkout', Auth([roles.User]), validationn(schemas.transactionalCheckout, ['body']), checkoutController.checkout)

@@ -51,3 +51,13 @@ export const myOrders = Joi.object({
     page:Joi.number().integer().min(1).max(1000000),
     size:Joi.number().integer().min(1).max(50)
 }).required()
+
+export const updateOrderStatus=Joi.object({
+    orderId:id.required(),
+    status:Joi.string().valid('delivered').required()
+}).required()
+export const managedOrders=Joi.object({
+    page:Joi.number().integer().min(1).max(1000000),
+    size:Joi.number().integer().min(1).max(50),
+    status:Joi.string().valid('pendingPayment','placed','onTheWay','delivered','cancelled')
+}).required()
